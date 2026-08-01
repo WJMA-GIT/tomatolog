@@ -5,6 +5,8 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+
 extensions.configure<ApplicationExtension> {
     namespace = "com.mawj.time_tomato"
     compileSdk = flutter.compileSdkVersion
@@ -13,6 +15,17 @@ extensions.configure<ApplicationExtension> {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    signingConfigs {
+        releaseKeystorePath?.let { path ->
+            create("release") {
+                storeFile = file(path)
+                storePassword = requireNotNull(System.getenv("ANDROID_STORE_PASSWORD"))
+                keyAlias = requireNotNull(System.getenv("ANDROID_KEY_ALIAS"))
+                keyPassword = requireNotNull(System.getenv("ANDROID_KEY_PASSWORD"))
+            }
+        }
     }
 
     defaultConfig {
@@ -25,8 +38,9 @@ extensions.configure<ApplicationExtension> {
 
     buildTypes {
         release {
-            // 仅用于本地 release 调试；正式发布前应改用私有签名配置。
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(
+                if (releaseKeystorePath == null) "debug" else "release",
+            )
         }
     }
 }
