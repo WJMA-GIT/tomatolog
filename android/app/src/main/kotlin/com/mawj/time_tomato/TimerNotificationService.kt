@@ -174,7 +174,6 @@ class TimerNotificationService : Service() {
 
         if (timer.isRunning && deadlineWallClock != null) {
             builder
-                .setContentText("${timer.category}进行中")
                 .setWhen(deadlineWallClock)
                 .setUsesChronometer(true)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
