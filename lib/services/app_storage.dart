@@ -9,7 +9,7 @@ abstract class AppStorage {
 }
 
 class SharedPreferencesAppStorage implements AppStorage {
-  static const _storageKey = 'time_tomato_data_v1';
+  static const _storageKey = 'tomatolog_data_v1';
 
   @override
   Future<Map<String, Object?>?> read() async {

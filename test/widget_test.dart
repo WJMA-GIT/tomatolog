@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_tomato/controllers/app_controller.dart';
-import 'package:time_tomato/main.dart';
-import 'package:time_tomato/screens/categories_screen.dart';
-import 'package:time_tomato/screens/home_shell.dart';
-import 'package:time_tomato/screens/timer_screen.dart';
-import 'package:time_tomato/services/app_platform_service.dart';
-import 'package:time_tomato/services/app_storage.dart';
+import 'package:tomatolog/controllers/app_controller.dart';
+import 'package:tomatolog/main.dart';
+import 'package:tomatolog/screens/categories_screen.dart';
+import 'package:tomatolog/screens/home_shell.dart';
+import 'package:tomatolog/screens/timer_screen.dart';
+import 'package:tomatolog/services/app_platform_service.dart';
+import 'package:tomatolog/services/app_storage.dart';
 
 void main() {
   testWidgets('shows the timer and navigates to categories', (tester) async {
-    const channel = MethodChannel('time_tomato/platform');
+    const channel = MethodChannel('tomatolog/platform');
     final calls = <MethodCall>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
       call,
@@ -33,7 +33,7 @@ void main() {
     await controller.load();
     controller.setThemePreference(AppThemePreference.light);
 
-    await tester.pumpWidget(TimeTomatoApp(controller: controller));
+    await tester.pumpWidget(TomatoLogApp(controller: controller));
     await tester.pumpAndSettle();
 
     final navigationBar = tester.widget<NavigationBar>(
@@ -74,14 +74,20 @@ void main() {
   testWidgets('notification permission guide blocks the app until granted', (
     tester,
   ) async {
-    const channel = MethodChannel('time_tomato/platform');
+    const channel = MethodChannel('tomatolog/platform');
     var granted = false;
+    var requested = false;
+    var requestCount = 0;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
       call,
     ) async {
-      if (call.method == 'requestNotificationPermission') granted = true;
+      if (call.method == 'requestNotificationPermission') {
+        requested = true;
+        requestCount++;
+        if (requestCount > 1) granted = true;
+      }
       if (call.method == 'notificationStatus') {
-        return <String, bool>{'granted': granted};
+        return <String, bool>{'granted': granted, 'requested': requested};
       }
       return null;
     });
@@ -94,11 +100,12 @@ void main() {
     final controller = AppController(MemoryAppStorage(), AppPlatformService());
     await controller.load();
 
-    await tester.pumpWidget(TimeTomatoApp(controller: controller));
+    await tester.pumpWidget(TomatoLogApp(controller: controller));
     await tester.pumpAndSettle();
 
     final guide = find.byKey(const Key('notification-permission-guide'));
     expect(guide, findsOneWidget);
+    expect(requestCount, 1);
     expect(
       (tester.getCenter(guide) - tester.getCenter(find.byType(HomeShell)))
           .distance,
@@ -111,6 +118,46 @@ void main() {
     await tester.tap(find.text('去开启'));
     await tester.pumpAndSettle();
     expect(guide, findsNothing);
+    controller.dispose();
+  });
+
+  testWidgets('notification guide refreshes after returning from settings', (
+    tester,
+  ) async {
+    const channel = MethodChannel('tomatolog/platform');
+    var granted = false;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'notificationStatus') {
+        return <String, bool>{'granted': granted, 'requested': true};
+      }
+      return null;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+    final controller = AppController(MemoryAppStorage(), AppPlatformService());
+    await controller.load();
+
+    await tester.pumpWidget(TomatoLogApp(controller: controller));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('notification-permission-guide')),
+      findsOneWidget,
+    );
+
+    granted = true;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('notification-permission-guide')),
+      findsNothing,
+    );
     controller.dispose();
   });
 

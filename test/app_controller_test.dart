@@ -1,9 +1,9 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_tomato/controllers/app_controller.dart';
-import 'package:time_tomato/models/daily_plan.dart';
-import 'package:time_tomato/services/app_platform_service.dart';
-import 'package:time_tomato/services/app_storage.dart';
+import 'package:tomatolog/controllers/app_controller.dart';
+import 'package:tomatolog/models/daily_plan.dart';
+import 'package:tomatolog/services/app_platform_service.dart';
+import 'package:tomatolog/services/app_storage.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -343,7 +343,7 @@ void main() {
   test(
     'sends category and countdown to the Android notification bridge',
     () async {
-      const channel = MethodChannel('time_tomato/platform');
+      const channel = MethodChannel('tomatolog/platform');
       final calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
@@ -369,7 +369,7 @@ void main() {
       expect(arguments['category'], '工作');
       expect(arguments['remainingSeconds'], 25 * 60);
       expect(arguments['totalSeconds'], 25 * 60);
-      expect(arguments['isRunning'], isTrue);
+      expect(arguments, isNot(contains('isRunning')));
       expect(arguments['icon'], isNotNull);
 
       await controller.requestBatteryOptimizationExemption();

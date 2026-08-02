@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'controllers/app_controller.dart';
@@ -5,11 +7,18 @@ import 'screens/home_shell.dart';
 import 'screens/timer_screen.dart';
 import 'services/app_platform_service.dart';
 import 'services/app_storage.dart';
+import 'services/webdav_sync_manager.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final platform = AppPlatformService();
-  final controller = AppController(SharedPreferencesAppStorage(), platform);
+  final webDav = WebDavSyncManager();
+  await webDav.load();
+  final controller = AppController(
+    SharedPreferencesAppStorage(),
+    platform,
+    webDav,
+  );
   final navigatorKey = GlobalKey<NavigatorState>();
   await controller.load();
   await platform.listenForNotificationActions(() {
@@ -18,20 +27,21 @@ Future<void> main() async {
       if (context != null) await showTimerEndDialog(context, controller);
     });
   });
-  runApp(TimeTomatoApp(controller: controller, navigatorKey: navigatorKey));
+  runApp(TomatoLogApp(controller: controller, navigatorKey: navigatorKey));
+  unawaited(webDav.runAutomaticTasks());
 }
 
-class TimeTomatoApp extends StatefulWidget {
-  const TimeTomatoApp({super.key, required this.controller, this.navigatorKey});
+class TomatoLogApp extends StatefulWidget {
+  const TomatoLogApp({super.key, required this.controller, this.navigatorKey});
 
   final AppController controller;
   final GlobalKey<NavigatorState>? navigatorKey;
 
   @override
-  State<TimeTomatoApp> createState() => _TimeTomatoAppState();
+  State<TomatoLogApp> createState() => _TomatoLogAppState();
 }
 
-class _TimeTomatoAppState extends State<TimeTomatoApp> {
+class _TomatoLogAppState extends State<TomatoLogApp> {
   late AppThemePreference _preference = widget.controller.themePreference;
   late int _accentColorValue = widget.controller.accentColorValue;
 
@@ -63,7 +73,7 @@ class _TimeTomatoAppState extends State<TimeTomatoApp> {
     return MaterialApp(
       navigatorKey: widget.navigatorKey,
       debugShowCheckedModeBanner: false,
-      title: '番茄日志',
+      title: '时间日志',
       themeMode: switch (_preference) {
         AppThemePreference.system => ThemeMode.system,
         AppThemePreference.light => ThemeMode.light,

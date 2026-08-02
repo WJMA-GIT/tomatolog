@@ -1,4 +1,4 @@
-package com.mawj.time_tomato
+package com.mawj.tomatolog
 
 import android.annotation.SuppressLint
 import android.app.AlarmManager
@@ -78,40 +78,26 @@ class TimerNotificationService : Service() {
         handler.removeCallbacks(finishAtDeadline)
         val existing = activeTimer
         val active =
-            if (timer.isRunning) {
-                existing?.copy(notification = timer)
-                    ?: ActiveTimer(
-                        notification = timer,
-                        deadlineElapsedRealtime =
-                            SystemClock.elapsedRealtime() +
-                                ((requestedDeadlineWallClock.takeIf { it > 0L }
-                                    ?: (System.currentTimeMillis() + timer.remainingSeconds * 1000L)) -
-                                    System.currentTimeMillis()).coerceAtLeast(0L),
-                        deadlineWallClock =
-                            requestedDeadlineWallClock.takeIf { it > 0L }
-                                ?: (System.currentTimeMillis() + timer.remainingSeconds * 1000L),
-                    )
-            } else {
-                null
-            }
+            existing?.copy(notification = timer)
+                ?: ActiveTimer(
+                    notification = timer,
+                    deadlineElapsedRealtime =
+                        SystemClock.elapsedRealtime() +
+                            ((requestedDeadlineWallClock.takeIf { it > 0L }
+                                ?: (System.currentTimeMillis() + timer.remainingSeconds * 1000L)) -
+                                System.currentTimeMillis()).coerceAtLeast(0L),
+                    deadlineWallClock =
+                        requestedDeadlineWallClock.takeIf { it > 0L }
+                            ?: (System.currentTimeMillis() + timer.remainingSeconds * 1000L),
+                )
         activeTimer = active
-        if (active == null) {
-            releaseWakeLock()
-            cancelScheduledCompletion(this)
-        } else {
-            acquireWakeLock(active)
-            scheduleCompletion(this, active)
-        }
+        acquireWakeLock(active)
+        scheduleCompletion(this, active)
+        val remainingMillis =
+            (active.deadlineElapsedRealtime - SystemClock.elapsedRealtime()).coerceAtLeast(0)
         val displayTimer =
-            if (active == null) {
-                timer
-            } else {
-                val remainingMillis =
-                    (active.deadlineElapsedRealtime - SystemClock.elapsedRealtime())
-                        .coerceAtLeast(0)
-                timer.copy(remainingSeconds = ((remainingMillis + 999) / 1000).toInt())
-            }
-        val notification = buildTimerNotification(displayTimer, active?.deadlineWallClock)
+            timer.copy(remainingSeconds = ((remainingMillis + 999) / 1000).toInt())
+        val notification = buildTimerNotification(displayTimer, active.deadlineWallClock)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 timerNotificationId,
@@ -121,19 +107,14 @@ class TimerNotificationService : Service() {
         } else {
             startForeground(timerNotificationId, notification)
         }
-        if (active != null) {
-            val remainingMillis =
-                (active.deadlineElapsedRealtime - SystemClock.elapsedRealtime())
-                    .coerceAtLeast(0L)
-            handler.postDelayed(finishAtDeadline, remainingMillis)
-        }
+        handler.postDelayed(finishAtDeadline, remainingMillis)
     }
 
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
     private fun buildTimerNotification(
         timer: TimerNotification,
-        deadlineWallClock: Long?,
+        deadlineWallClock: Long,
     ): Notification {
         val contentIntent =
             PendingIntent.getActivity(
@@ -154,12 +135,11 @@ class TimerNotificationService : Service() {
             )
         val builder = notificationBuilder(timerChannelId)
         setTimerIcons(builder, timer)
-        val compactTime = formatTime(timer.remainingSeconds)
         builder
-            .setContentTitle(
-                if (timer.isRunning) timer.category else "${timer.category} · $compactTime",
-            ).setContentIntent(contentIntent)
+            .setContentTitle(timer.category)
+            .setContentIntent(contentIntent)
             .setOngoing(true)
+            .setTimeoutAfter((deadlineWallClock - System.currentTimeMillis()).coerceAtLeast(0L))
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setColor(timer.color)
@@ -172,20 +152,11 @@ class TimerNotificationService : Service() {
             ).extras
             .putBoolean("android.requestPromotedOngoing", true)
 
-        if (timer.isRunning && deadlineWallClock != null) {
-            builder
-                .setWhen(deadlineWallClock)
-                .setUsesChronometer(true)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                builder.setChronometerCountDown(true)
-            }
-        } else {
-            builder
-                .setContentText("已暂停 · $compactTime")
-                .setShowWhen(false)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-                builder.setShortCriticalText(compactTime)
-            }
+        builder
+            .setWhen(deadlineWallClock)
+            .setUsesChronometer(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            builder.setChronometerCountDown(true)
         }
         return builder.build()
     }
@@ -280,13 +251,12 @@ class TimerNotificationService : Service() {
         private const val completionNotificationId = 26
         private const val timerChannelId = "focus_timer"
         private const val completionChannelId = "timer_complete_v3"
-        private const val actionShow = "com.mawj.time_tomato.SHOW_TIMER"
-        private const val actionComplete = "com.mawj.time_tomato.COMPLETE_TIMER"
-        private const val stopTimerAction = "com.mawj.time_tomato.STOP_TIMER"
+        private const val actionShow = "com.mawj.tomatolog.SHOW_TIMER"
+        private const val actionComplete = "com.mawj.tomatolog.COMPLETE_TIMER"
+        private const val stopTimerAction = "com.mawj.tomatolog.STOP_TIMER"
         private const val extraCategory = "category"
         private const val extraRemaining = "remaining"
         private const val extraTotal = "total"
-        private const val extraRunning = "running"
         private const val extraColor = "color"
         private const val extraIcon = "icon"
         private const val extraDeadline = "deadline"
@@ -332,19 +302,13 @@ class TimerNotificationService : Service() {
             )
 
         fun show(context: Context, timer: TimerNotification) {
-            val deadline =
-                if (timer.isRunning) {
-                    System.currentTimeMillis() + timer.remainingSeconds * 1000L
-                } else {
-                    0L
-                }
+            val deadline = System.currentTimeMillis() + timer.remainingSeconds * 1000L
             val intent =
                 Intent(context, TimerNotificationService::class.java).apply {
                     action = actionShow
                     putExtra(extraCategory, timer.category)
                     putExtra(extraRemaining, timer.remainingSeconds)
                     putExtra(extraTotal, timer.totalSeconds)
-                    putExtra(extraRunning, timer.isRunning)
                     putExtra(extraColor, timer.color)
                     putExtra(extraIcon, timer.icon)
                     putExtra(extraDeadline, deadline)
@@ -373,11 +337,8 @@ class TimerNotificationService : Service() {
 
         internal fun completeFromAlarm(context: Context, alarmIntent: Intent) {
             val timer = alarmIntent.timerNotification() ?: return
-            cancelScheduledCompletion(context)
-            context.stopService(Intent(context, TimerNotificationService::class.java))
             val manager =
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.cancel(timerNotificationId)
             ensureChannels(context)
             val contentIntent =
                 PendingIntent.getActivity(
@@ -417,6 +378,9 @@ class TimerNotificationService : Service() {
                     .setVibrate(completionVibrationPattern)
             }
             manager.notify(completionNotificationId, builder.build())
+            manager.cancel(timerNotificationId)
+            cancelScheduledCompletion(context)
+            context.stopService(Intent(context, TimerNotificationService::class.java))
         }
 
         private fun scheduleCompletion(context: Context, active: ActiveTimer) {
@@ -447,7 +411,7 @@ class TimerNotificationService : Service() {
             val intent = Intent(context, TimerAlarmReceiver::class.java)
             if (timer != null) {
                 intent.putTimerNotification(
-                    timer.copy(remainingSeconds = 0, isRunning = false),
+                    timer.copy(remainingSeconds = 0),
                 )
             }
             return PendingIntent.getBroadcast(
@@ -462,7 +426,6 @@ class TimerNotificationService : Service() {
             putExtra(extraCategory, timer.category)
             putExtra(extraRemaining, timer.remainingSeconds)
             putExtra(extraTotal, timer.totalSeconds)
-            putExtra(extraRunning, timer.isRunning)
             putExtra(extraColor, timer.color)
             putExtra(extraIcon, timer.icon)
         }
@@ -473,7 +436,6 @@ class TimerNotificationService : Service() {
                 category = category,
                 remainingSeconds = getIntExtra(extraRemaining, 0),
                 totalSeconds = getIntExtra(extraTotal, 1),
-                isRunning = getBooleanExtra(extraRunning, false),
                 color = getIntExtra(extraColor, 0),
                 icon = getByteArrayExtra(extraIcon),
             )
@@ -491,7 +453,6 @@ data class TimerNotification(
     val category: String,
     val remainingSeconds: Int,
     val totalSeconds: Int,
-    val isRunning: Boolean,
     val color: Int,
     val icon: ByteArray?,
 )

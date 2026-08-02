@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -8,13 +10,19 @@ import '../models/focus_category.dart';
 import '../models/time_log.dart';
 import '../services/app_platform_service.dart';
 import '../services/app_storage.dart';
+import '../services/webdav_sync_manager.dart';
 
 enum TimerPhase { idle, running }
 
 enum AppThemePreference { system, light, dark }
 
 class AppController extends ChangeNotifier {
-  AppController(this._storage, [this._platform]);
+  AppController(this._storage, [this._platform, this.webDav]) {
+    webDav?.attach(
+      exportData: exportPortableData,
+      importData: importPortableData,
+    );
+  }
 
   static const maxCategoryNameLength = 12;
   static const maxMinutes = 1440;
@@ -23,6 +31,7 @@ class AppController extends ChangeNotifier {
 
   final AppStorage _storage;
   final AppPlatformService? _platform;
+  final WebDavSyncManager? webDav;
   final List<FocusCategory> _categories = [];
   final List<TimeLog> _logs = [];
   final List<DailyPlan> _plans = [];
@@ -731,29 +740,89 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  Future<void> _persist() {
-    return _storage.write({
-      'categories': _categories.map((item) => item.toJson()).toList(),
-      'logs': _logs.map((item) => item.toJson()).toList(),
-      'plans': _plans.map((item) => item.toJson()).toList(),
-      'selectedCategoryId': selectedCategoryId,
-      'plannedMinutes': plannedMinutes,
-      'themePreference': themePreference.name,
-      'accentColorValue': accentColorValue,
-      'backgroundImagePath': backgroundImagePath,
-      'timer': {
-        'phase': phase.name,
-        'remainingSeconds': remainingSeconds,
-        'sessionStartedAt': _sessionStartedAt?.toIso8601String(),
-        'targetEndAt': _targetEndAt?.toIso8601String(),
-      },
-    });
+  Map<String, Object?> _dataSnapshot() => {
+    'categories': _categories.map((item) => item.toJson()).toList(),
+    'logs': _logs.map((item) => item.toJson()).toList(),
+    'plans': _plans.map((item) => item.toJson()).toList(),
+    'selectedCategoryId': selectedCategoryId,
+    'plannedMinutes': plannedMinutes,
+    'themePreference': themePreference.name,
+    'accentColorValue': accentColorValue,
+    'backgroundImagePath': backgroundImagePath,
+    'timer': {
+      'phase': phase.name,
+      'remainingSeconds': remainingSeconds,
+      'sessionStartedAt': _sessionStartedAt?.toIso8601String(),
+      'targetEndAt': _targetEndAt?.toIso8601String(),
+    },
+  };
+
+  Future<void> _persist() => _storage.write(_dataSnapshot());
+
+  Future<Map<String, Object?>> exportPortableData() async {
+    await _pendingPersist;
+    final data = _dataSnapshot();
+    data['timer'] = {
+      'phase': TimerPhase.idle.name,
+      'remainingSeconds': 25 * 60,
+      'sessionStartedAt': null,
+      'targetEndAt': null,
+    };
+    final backgroundPath = _backgroundImagePath;
+    data.remove('backgroundImagePath');
+    if (backgroundPath != null) {
+      try {
+        final bytes = await File(backgroundPath).readAsBytes();
+        data['backgroundImage'] = {
+          'encoding': 'base64',
+          'bytes': base64Encode(bytes),
+        };
+      } on FileSystemException catch (error) {
+        throw StateError('无法读取自定义背景图片：${error.message}');
+      }
+    }
+    return data;
+  }
+
+  Future<void> importPortableData(Map<String, Object?> source) async {
+    final data = (jsonDecode(jsonEncode(source)) as Map)
+        .cast<String, Object?>();
+    final background = (data.remove('backgroundImage') as Map?)
+        ?.cast<String, Object?>();
+    String? restoredBackgroundPath;
+    if (background?['encoding'] == 'base64' && background?['bytes'] is String) {
+      final platform = _platform;
+      if (platform == null) throw StateError('当前平台无法恢复背景图片');
+      restoredBackgroundPath = await platform.saveBackgroundImage(
+        base64Decode(background!['bytes']! as String),
+      );
+      if (restoredBackgroundPath == null) {
+        throw StateError('背景图片恢复失败');
+      }
+    }
+    data['backgroundImagePath'] = restoredBackgroundPath;
+    data['timer'] = {
+      'phase': TimerPhase.idle.name,
+      'remainingSeconds': 25 * 60,
+      'sessionStartedAt': null,
+      'targetEndAt': null,
+    };
+    _ticker?.cancel();
+    await _platform?.cancelTimer();
+    await _storage.write(data);
+    await load();
   }
 
   void _schedulePersist() {
     _pendingPersist = _pendingPersist.then(
-      (_) => _persist(),
-      onError: (_, _) => _persist(),
+      (_) async {
+        await _persist();
+        webDav?.markLocalChanged();
+      },
+      onError: (_, _) async {
+        await _persist();
+        webDav?.markLocalChanged();
+      },
     );
     unawaited(_pendingPersist.catchError((Object _) {}));
   }
@@ -825,7 +894,6 @@ class AppController extends ChangeNotifier {
         colorValue: category.colorValue,
         remainingSeconds: remainingSeconds,
         totalSeconds: plannedMinutes * 60,
-        isRunning: phase == TimerPhase.running,
       ),
     );
   }
@@ -861,6 +929,7 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _ticker?.cancel();
     _midnightRefresh?.cancel();
+    webDav?.dispose();
     super.dispose();
   }
 }

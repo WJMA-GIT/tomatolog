@@ -75,13 +75,13 @@ jobs:
             --build-name "${{ steps.version.outputs.version }}" \
             --build-number "${{ github.run_number }}"
           mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
-            "time-tomato-${{ steps.version.outputs.tag }}-arm64-v8a.apk"
+            "tomatolog-${{ steps.version.outputs.tag }}-arm64-v8a.apk"
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-          APK: time-tomato-${{ steps.version.outputs.tag }}-arm64-v8a.apk
+          APK: tomatolog-${{ steps.version.outputs.tag }}-arm64-v8a.apk
         shell: bash
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then

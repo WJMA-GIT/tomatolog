@@ -8,7 +8,7 @@ plugins {
 val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
 
 extensions.configure<ApplicationExtension> {
-    namespace = "com.mawj.time_tomato"
+    namespace = "com.mawj.tomatolog"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -29,7 +29,7 @@ extensions.configure<ApplicationExtension> {
     }
 
     defaultConfig {
-        applicationId = "com.mawj.time_tomato"
+        applicationId = "com.mawj.tomatolog"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

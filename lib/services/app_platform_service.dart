@@ -8,7 +8,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../ui/ui_helpers.dart';
 
 class AppPlatformService {
-  static const _channel = MethodChannel('time_tomato/platform');
+  static const _channel = MethodChannel('tomatolog/platform');
   final _iconCache = <String, Uint8List>{};
 
   Future<void> listenForNotificationActions(VoidCallback onStop) async {
@@ -40,19 +40,35 @@ class AppPlatformService {
   Future<String?> pickBackgroundImage() =>
       _invoke<String>('pickBackgroundImage');
 
+  Future<String?> saveBackgroundImage(Uint8List bytes) =>
+      _invoke<String>('saveBackgroundImage', bytes);
+
+  Future<bool> exportBackupFile({
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    try {
+      return await _channel.invokeMethod<bool>('exportBackupFile', {
+            'fileName': fileName,
+            'bytes': bytes,
+          }) ??
+          false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   Future<void> showTimer({
     required String categoryName,
     required String iconKey,
     required int colorValue,
     required int remainingSeconds,
     required int totalSeconds,
-    required bool isRunning,
   }) async {
     final arguments = <String, Object?>{
       'category': categoryName,
       'remainingSeconds': remainingSeconds,
       'totalSeconds': totalSeconds,
-      'isRunning': isRunning,
       'color': colorValue,
     };
     final icon = await _notificationIcon(iconKey);

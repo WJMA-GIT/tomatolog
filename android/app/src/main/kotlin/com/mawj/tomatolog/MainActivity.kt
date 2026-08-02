@@ -1,4 +1,4 @@
-package com.mawj.time_tomato
+package com.mawj.tomatolog
 
 import android.Manifest
 import android.app.Activity
@@ -17,22 +17,25 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private val permissionRequest = 26
     private val backgroundRequest = 27
-    private val stopTimerAction = "com.mawj.time_tomato.STOP_TIMER"
+    private val backupExportRequest = 28
+    private val stopTimerAction = "com.mawj.tomatolog.STOP_TIMER"
     private var pendingNotification: TimerNotification? = null
+    private var notificationPermissionResult: MethodChannel.Result? = null
     private var backgroundResult: MethodChannel.Result? = null
+    private var backupExportResult: MethodChannel.Result? = null
+    private var backupExportBytes: ByteArray? = null
     private var platformChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         platformChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            "time_tomato/platform",
+            "tomatolog/platform",
         )
         platformChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "requestNotificationPermission" -> {
-                    requestNotificationPermission()
-                    result.success(null)
+                    requestNotificationPermission(result)
                 }
                 "consumeNotificationAction" ->
                     result.success(consumeNotificationAction())
@@ -46,13 +49,33 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "pickBackgroundImage" -> pickBackgroundImage(result)
+                "exportBackupFile" -> {
+                    val fileName = call.argument<String>("fileName")
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (fileName.isNullOrBlank() || bytes == null) {
+                        result.error("invalid_backup", "备份文件无效", null)
+                    } else {
+                        exportBackupFile(fileName, bytes, result)
+                    }
+                }
+                "saveBackgroundImage" -> {
+                    val bytes = call.arguments as? ByteArray
+                    if (bytes == null) {
+                        result.error("invalid_image", "备份中的背景图片无效", null)
+                    } else {
+                        runCatching { saveBackgroundImage(bytes) }
+                            .onSuccess(result::success)
+                            .onFailure {
+                                result.error("image_restore_failed", it.message, null)
+                            }
+                    }
+                }
                 "showTimer" -> {
                     showOrRequestPermission(
                         TimerNotification(
                             category = call.argument<String>("category").orEmpty(),
                             remainingSeconds = call.argument<Int>("remainingSeconds") ?: 0,
                             totalSeconds = call.argument<Int>("totalSeconds") ?: 1,
-                            isRunning = call.argument<Boolean>("isRunning") ?: false,
                             color = call.argument<Number>("color")?.toInt() ?: 0,
                             icon = call.argument<ByteArray>("icon"),
                         ),
@@ -87,20 +110,25 @@ class MainActivity : FlutterActivity() {
         return "stopTimer"
     }
 
-    private fun requestNotificationPermission() {
+    private fun requestNotificationPermission(result: MethodChannel.Result? = null) {
         TimerNotificationService.ensureChannels(this)
         val granted =
             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
-        if (granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            result?.success(null)
+            return
+        }
 
         val preferences = getSharedPreferences("app_permissions", MODE_PRIVATE)
         val requested = preferences.getBoolean("notification_requested", false)
         if (requested && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
             startActivity(appNotificationSettingsIntent())
+            result?.success(null)
         } else {
             preferences.edit().putBoolean("notification_requested", true).apply()
+            notificationPermissionResult = result
             requestPermissions(
                 arrayOf(Manifest.permission.POST_NOTIFICATIONS),
                 permissionRequest,
@@ -113,8 +141,13 @@ class MainActivity : FlutterActivity() {
             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
+        val requested =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                getSharedPreferences("app_permissions", MODE_PRIVATE)
+                    .getBoolean("notification_requested", false)
         return mapOf(
             "granted" to granted,
+            "requested" to requested,
             "batteryUnrestricted" to
                 (getSystemService(Context.POWER_SERVICE) as PowerManager)
                     .isIgnoringBatteryOptimizations(packageName),
@@ -165,6 +198,34 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    private fun saveBackgroundImage(bytes: ByteArray): String {
+        require(bytes.isNotEmpty()) { "背景图片为空" }
+        return File(filesDir, "custom_background").apply {
+            writeBytes(bytes)
+        }.absolutePath
+    }
+
+    private fun exportBackupFile(
+        fileName: String,
+        bytes: ByteArray,
+        result: MethodChannel.Result,
+    ) {
+        if (backupExportResult != null) {
+            result.error("picker_busy", "文件保存器已打开", null)
+            return
+        }
+        backupExportResult = result
+        backupExportBytes = bytes
+        startActivityForResult(
+            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/json"
+                putExtra(Intent.EXTRA_TITLE, fileName)
+            },
+            backupExportRequest,
+        )
+    }
+
     private fun showOrRequestPermission(notification: TimerNotification) {
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -190,6 +251,8 @@ class MainActivity : FlutterActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != permissionRequest) return
+        notificationPermissionResult?.success(null)
+        notificationPermissionResult = null
         val notification = pendingNotification
         pendingNotification = null
         val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
@@ -204,6 +267,28 @@ class MainActivity : FlutterActivity() {
         data: Intent?,
     ) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == backupExportRequest) {
+            val result = backupExportResult
+            val bytes = backupExportBytes
+            backupExportResult = null
+            backupExportBytes = null
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                result?.success(false)
+                return
+            }
+            runCatching {
+                requireNotNull(bytes) { "备份内容为空" }
+                contentResolver.openOutputStream(data.data!!, "w").use { output ->
+                    requireNotNull(output) { "无法写入所选文件" }
+                    output.write(bytes)
+                }
+            }.onSuccess {
+                result?.success(true)
+            }.onFailure {
+                result?.error("backup_export_failed", it.message, null)
+            }
+            return
+        }
         if (requestCode != backgroundRequest) return
         val result = backgroundResult
         backgroundResult = null

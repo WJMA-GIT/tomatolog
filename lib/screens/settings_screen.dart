@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../controllers/app_controller.dart';
+import '../services/webdav_sync_manager.dart';
+import '../widgets/webdav_settings_section.dart';
 
 const _accentOptions = [
   (label: '珊瑚红', color: Color(0xFFE05446)),
@@ -31,6 +34,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refreshNotificationStatus();
+    final webDav = widget.controller.webDav;
+    if (webDav?.configured == true) {
+      unawaited(webDav!.refreshRemoteState().catchError((Object _) {}));
+    }
   }
 
   @override
@@ -187,8 +194,89 @@ class _SettingsScreenState extends State<SettingsScreen>
               ],
             ),
           ),
+          if (widget.controller.webDav case final webDav?) ...[
+            const SizedBox(height: 28),
+            AnimatedBuilder(
+              animation: webDav,
+              builder: (context, _) => WebDavSettingsSection(
+                serverUrl: webDav.serverUrl,
+                username: webDav.username,
+                hasSavedPassword: webDav.hasSavedPassword,
+                autoSyncEnabled: webDav.syncPreferences.enabled,
+                remoteDataUpdatedAt: webDav.remoteDataUpdatedAt,
+                lastSyncAt: webDav.syncPreferences.lastSyncedAt,
+                autoBackupEnabled: webDav.backupPreferences.enabled,
+                backupFrequency: webDav.backupPreferences.frequency,
+                lastBackupAt: webDav.backupPreferences.lastBackupAt,
+                archives: webDav.backups,
+                onSaveConnection: (draft) async {
+                  await webDav.saveConnection(
+                    url: draft.serverUrl,
+                    user: draft.username,
+                    password: draft.password,
+                  );
+                  try {
+                    await webDav.refreshRemoteState();
+                  } on Object {
+                    // Keep the configuration so the user can fix access later.
+                  }
+                },
+                onTestConnection: (draft) => webDav.testConnection(
+                  url: draft.serverUrl,
+                  user: draft.username,
+                  password: draft.password,
+                ),
+                onSyncNow: () => _syncWebDav(webDav),
+                onAutoSyncChanged: webDav.setAutoSync,
+                onBackupNow: webDav.createBackup,
+                onExportLocalBackup: webDav.exportLocalBackup,
+                onAutoBackupChanged: webDav.setAutoBackup,
+                onBackupFrequencyChanged: webDav.setBackupFrequency,
+                onRestoreArchive: webDav.restoreBackup,
+                onDeleteArchive: webDav.deleteBackup,
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<bool> _syncWebDav(WebDavSyncManager webDav) async {
+    try {
+      await webDav.syncNow();
+      return true;
+    } on WebDavInitialSyncRequired {
+      if (!mounted) return false;
+      final mode = await showDialog<InitialSyncMode>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('云端已有同步数据'),
+          content: const Text('这是当前服务器的首次同步，请选择如何处理本机和云端数据。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(context, InitialSyncMode.useRemote),
+              child: const Text('使用云端'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, InitialSyncMode.useLocal),
+              child: const Text('使用本机'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, InitialSyncMode.merge),
+              child: const Text('合并数据'),
+            ),
+          ],
+        ),
+      );
+      if (mode == null) return false;
+      await webDav.syncNow(initialMode: mode);
+      return true;
+    }
   }
 }

@@ -21,13 +21,14 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 2;
   bool _showNotificationGuide = false;
+  bool _requestingNotificationPermission = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _refreshNotificationStatus();
+      _refreshNotificationStatus(requestOnFirstOpen: true);
     });
   }
 
@@ -42,16 +43,27 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) _refreshNotificationStatus();
   }
 
-  Future<void> _refreshNotificationStatus() async {
+  Future<void> _refreshNotificationStatus({
+    bool requestOnFirstOpen = false,
+  }) async {
     final status = await widget.controller.notificationStatus();
     if (!mounted) return;
-    setState(() => _showNotificationGuide = status['granted'] != true);
+    final granted = status['granted'] == true;
+    setState(() => _showNotificationGuide = !granted);
+    if (requestOnFirstOpen && !granted && status['requested'] != true) {
+      await _requestNotificationPermission();
+    }
   }
 
   Future<void> _requestNotificationPermission() async {
-    await widget.controller.requestNotificationPermission();
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    await _refreshNotificationStatus();
+    if (_requestingNotificationPermission) return;
+    _requestingNotificationPermission = true;
+    try {
+      await widget.controller.requestNotificationPermission();
+      await _refreshNotificationStatus();
+    } finally {
+      _requestingNotificationPermission = false;
+    }
   }
 
   @override
