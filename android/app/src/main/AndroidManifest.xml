@@ -13,7 +13,7 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
 
     <application
-        android:label="时间日志"
+        android:label="番茄日志"
         android:name="${applicationName}"
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"

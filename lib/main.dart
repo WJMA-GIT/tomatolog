@@ -73,7 +73,7 @@ class _TomatoLogAppState extends State<TomatoLogApp> {
     return MaterialApp(
       navigatorKey: widget.navigatorKey,
       debugShowCheckedModeBanner: false,
-      title: '时间日志',
+      title: '番茄日志',
       themeMode: switch (_preference) {
         AppThemePreference.system => ThemeMode.system,
         AppThemePreference.light => ThemeMode.light,
