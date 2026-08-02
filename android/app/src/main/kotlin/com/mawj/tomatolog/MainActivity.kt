@@ -48,6 +48,24 @@ class MainActivity : FlutterActivity() {
                     openCompletionNotificationSettings()
                     result.success(null)
                 }
+                "markNotificationSetupGuideShown" -> {
+                    getSharedPreferences("app_permissions", MODE_PRIVATE)
+                        .edit()
+                        .putBoolean("notification_setup_guide_shown", true)
+                        .apply()
+                    result.success(null)
+                }
+                "markBatteryOptimizationGuideShown" -> {
+                    getSharedPreferences("app_permissions", MODE_PRIVATE)
+                        .edit()
+                        .putBoolean("battery_optimization_guide_shown", true)
+                        .apply()
+                    result.success(null)
+                }
+                "showCompletionNotificationTest" -> {
+                    TimerNotificationService.showCompletionTest(this)
+                    result.success(null)
+                }
                 "pickBackgroundImage" -> pickBackgroundImage(result)
                 "exportBackupFile" -> {
                     val fileName = call.argument<String>("fileName")
@@ -145,9 +163,17 @@ class MainActivity : FlutterActivity() {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 getSharedPreferences("app_permissions", MODE_PRIVATE)
                     .getBoolean("notification_requested", false)
+        val setupGuideShown =
+            getSharedPreferences("app_permissions", MODE_PRIVATE)
+                .getBoolean("notification_setup_guide_shown", false)
+        val batteryGuideShown =
+            getSharedPreferences("app_permissions", MODE_PRIVATE)
+                .getBoolean("battery_optimization_guide_shown", false)
         return mapOf(
             "granted" to granted,
             "requested" to requested,
+            "setupGuideShown" to setupGuideShown,
+            "batteryGuideShown" to batteryGuideShown,
             "batteryUnrestricted" to
                 (getSystemService(Context.POWER_SERVICE) as PowerManager)
                     .isIgnoringBatteryOptimizations(packageName),

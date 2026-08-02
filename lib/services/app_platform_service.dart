@@ -34,6 +34,15 @@ class AppPlatformService {
   Future<void> openCompletionNotificationSettings() =>
       _invoke<void>('openCompletionNotificationSettings');
 
+  Future<void> markNotificationSetupGuideShown() =>
+      _invoke<void>('markNotificationSetupGuideShown');
+
+  Future<void> markBatteryOptimizationGuideShown() =>
+      _invoke<void>('markBatteryOptimizationGuideShown');
+
+  Future<void> showCompletionNotificationTest() =>
+      _invoke<void>('showCompletionNotificationTest');
+
   Future<void> requestBatteryOptimizationExemption() =>
       _invoke<void>('requestBatteryOptimizationExemption');
 

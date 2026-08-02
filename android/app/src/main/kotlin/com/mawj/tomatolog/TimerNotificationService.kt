@@ -249,6 +249,7 @@ class TimerNotificationService : Service() {
     companion object {
         private const val timerNotificationId = 25
         private const val completionNotificationId = 26
+        private const val completionTestNotificationId = 28
         private const val timerChannelId = "focus_timer"
         private const val completionChannelId = "timer_complete_v3"
         private const val actionShow = "com.mawj.tomatolog.SHOW_TIMER"
@@ -300,6 +301,27 @@ class TimerNotificationService : Service() {
             Uri.parse(
                 "${ContentResolver.SCHEME_ANDROID_RESOURCE}://${context.packageName}/${R.raw.ding}",
             )
+
+        fun showCompletionTest(context: Context) {
+            ensureChannels(context)
+            val builder =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Notification.Builder(context, completionChannelId)
+                } else {
+                    Notification.Builder(context)
+                        .setSound(completionSoundUri(context))
+                        .setVibrate(completionVibrationPattern)
+                }
+            builder
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("声音和震动测试")
+                .setContentText("如果听到提示音并感到震动，提醒设置已经生效")
+                .setAutoCancel(true)
+                .setCategory(Notification.CATEGORY_ALARM)
+                .setPriority(Notification.PRIORITY_HIGH)
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .notify(completionTestNotificationId, builder.build())
+        }
 
         fun show(context: Context, timer: TimerNotification) {
             val deadline = System.currentTimeMillis() + timer.remainingSeconds * 1000L

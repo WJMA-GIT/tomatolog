@@ -19,7 +19,11 @@ void main() {
     ) async {
       calls.add(call);
       if (call.method == 'notificationStatus') {
-        return <String, bool>{'granted': true};
+        return <String, bool>{
+          'granted': true,
+          'setupGuideShown': true,
+          'batteryUnrestricted': true,
+        };
       }
       return null;
     });
@@ -77,6 +81,7 @@ void main() {
     const channel = MethodChannel('tomatolog/platform');
     var granted = false;
     var requested = false;
+    var setupGuideShown = false;
     var requestCount = 0;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
       call,
@@ -87,7 +92,14 @@ void main() {
         if (requestCount > 1) granted = true;
       }
       if (call.method == 'notificationStatus') {
-        return <String, bool>{'granted': granted, 'requested': requested};
+        return <String, bool>{
+          'granted': granted,
+          'requested': requested,
+          'setupGuideShown': setupGuideShown,
+        };
+      }
+      if (call.method == 'markNotificationSetupGuideShown') {
+        setupGuideShown = true;
       }
       return null;
     });
@@ -118,6 +130,13 @@ void main() {
     await tester.tap(find.text('去开启'));
     await tester.pumpAndSettle();
     expect(guide, findsNothing);
+    expect(find.byKey(const Key('notification-setup-guide')), findsOneWidget);
+    await tester.tap(find.text('稍后'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('notification-setup-guide')), findsNothing);
+    expect(find.byKey(const Key('battery-optimization-guide')), findsOneWidget);
+    await tester.tap(find.text('稍后'));
+    await tester.pumpAndSettle();
     controller.dispose();
   });
 
@@ -130,7 +149,11 @@ void main() {
       call,
     ) async {
       if (call.method == 'notificationStatus') {
-        return <String, bool>{'granted': granted, 'requested': true};
+        return <String, bool>{
+          'granted': granted,
+          'requested': true,
+          'setupGuideShown': true,
+        };
       }
       return null;
     });
@@ -158,6 +181,101 @@ void main() {
       find.byKey(const Key('notification-permission-guide')),
       findsNothing,
     );
+    controller.dispose();
+  });
+
+  testWidgets('guides OEM notification settings and tests after return', (
+    tester,
+  ) async {
+    const channel = MethodChannel('tomatolog/platform');
+    var setupGuideShown = false;
+    var settingsOpened = 0;
+    var testsSent = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'notificationStatus') {
+        return <String, bool>{
+          'granted': true,
+          'setupGuideShown': setupGuideShown,
+        };
+      }
+      if (call.method == 'markNotificationSetupGuideShown') {
+        setupGuideShown = true;
+      }
+      if (call.method == 'openCompletionNotificationSettings') {
+        settingsOpened++;
+      }
+      if (call.method == 'showCompletionNotificationTest') testsSent++;
+      return null;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+    final controller = AppController(MemoryAppStorage(), AppPlatformService());
+    await controller.load();
+
+    await tester.pumpWidget(TomatoLogApp(controller: controller));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('notification-setup-guide')), findsOneWidget);
+
+    await tester.tap(find.text('去检查'));
+    await tester.pumpAndSettle();
+    expect(settingsOpened, 1);
+    expect(find.byKey(const Key('notification-setup-guide')), findsNothing);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(testsSent, 1);
+    controller.dispose();
+  });
+
+  testWidgets('guides battery optimization after notification setup', (
+    tester,
+  ) async {
+    const channel = MethodChannel('tomatolog/platform');
+    var batteryGuideShown = false;
+    var exemptionRequests = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'notificationStatus') {
+        return <String, bool>{
+          'granted': true,
+          'setupGuideShown': true,
+          'batteryUnrestricted': false,
+          'batteryGuideShown': batteryGuideShown,
+        };
+      }
+      if (call.method == 'markBatteryOptimizationGuideShown') {
+        batteryGuideShown = true;
+      }
+      if (call.method == 'requestBatteryOptimizationExemption') {
+        exemptionRequests++;
+      }
+      return null;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+    final controller = AppController(MemoryAppStorage(), AppPlatformService());
+    await controller.load();
+
+    await tester.pumpWidget(TomatoLogApp(controller: controller));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('battery-optimization-guide')), findsOneWidget);
+
+    await tester.tap(find.text('去设置'));
+    await tester.pumpAndSettle();
+    expect(exemptionRequests, 1);
+    expect(find.byKey(const Key('battery-optimization-guide')), findsNothing);
     controller.dispose();
   });
 

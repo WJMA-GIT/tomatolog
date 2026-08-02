@@ -540,6 +540,18 @@ class AppController extends ChangeNotifier {
     await _platform?.openCompletionNotificationSettings();
   }
 
+  Future<void> markNotificationSetupGuideShown() async {
+    await _platform?.markNotificationSetupGuideShown();
+  }
+
+  Future<void> markBatteryOptimizationGuideShown() async {
+    await _platform?.markBatteryOptimizationGuideShown();
+  }
+
+  Future<void> showCompletionNotificationTest() async {
+    await _platform?.showCompletionNotificationTest();
+  }
+
   Future<void> requestBatteryOptimizationExemption() async {
     await _platform?.requestBatteryOptimizationExemption();
   }

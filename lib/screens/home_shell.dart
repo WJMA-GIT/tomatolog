@@ -21,7 +21,11 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 2;
   bool _showNotificationGuide = false;
+  bool _showNotificationSetupGuide = false;
+  bool _showBatteryOptimizationGuide = false;
   bool _requestingNotificationPermission = false;
+  bool _notificationGranted = false;
+  bool _testNotificationOnResume = false;
 
   @override
   void initState() {
@@ -40,7 +44,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshNotificationStatus();
+    if (state == AppLifecycleState.resumed) _handleAppResumed();
+  }
+
+  Future<void> _handleAppResumed() async {
+    await _refreshNotificationStatus();
+    if (!_testNotificationOnResume || !_notificationGranted) return;
+    _testNotificationOnResume = false;
+    await widget.controller.showCompletionNotificationTest();
   }
 
   Future<void> _refreshNotificationStatus({
@@ -49,7 +60,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final status = await widget.controller.notificationStatus();
     if (!mounted) return;
     final granted = status['granted'] == true;
-    setState(() => _showNotificationGuide = !granted);
+    setState(() {
+      _notificationGranted = granted;
+      _showNotificationGuide = !granted;
+      _showNotificationSetupGuide =
+          granted && status['setupGuideShown'] != true;
+      _showBatteryOptimizationGuide =
+          granted &&
+          status['setupGuideShown'] == true &&
+          status['batteryUnrestricted'] != true &&
+          status['batteryGuideShown'] != true;
+    });
     if (requestOnFirstOpen && !granted && status['requested'] != true) {
       await _requestNotificationPermission();
     }
@@ -66,6 +87,33 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _dismissNotificationSetupGuide() async {
+    await widget.controller.markNotificationSetupGuideShown();
+    await _refreshNotificationStatus();
+  }
+
+  Future<void> _openNotificationSetup() async {
+    await widget.controller.markNotificationSetupGuideShown();
+    if (!mounted) return;
+    setState(() {
+      _showNotificationSetupGuide = false;
+      _testNotificationOnResume = true;
+    });
+    await widget.controller.openCompletionNotificationSettings();
+  }
+
+  Future<void> _dismissBatteryOptimizationGuide() async {
+    await widget.controller.markBatteryOptimizationGuideShown();
+    if (mounted) setState(() => _showBatteryOptimizationGuide = false);
+  }
+
+  Future<void> _openBatteryOptimizationSetup() async {
+    await widget.controller.markBatteryOptimizationGuideShown();
+    if (!mounted) return;
+    setState(() => _showBatteryOptimizationGuide = false);
+    await widget.controller.requestBatteryOptimizationExemption();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -73,7 +121,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       builder: (context, _) {
         final backgroundPath = widget.controller.backgroundImagePath;
         return PopScope(
-          canPop: !_showNotificationGuide,
+          canPop:
+              !_showNotificationGuide &&
+              !_showNotificationSetupGuide &&
+              !_showBatteryOptimizationGuide,
           child: Stack(
             children: [
               Scaffold(
@@ -194,6 +245,137 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                                     ),
                                   ],
                                 ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_showNotificationSetupGuide)
+                Positioned.fill(
+                  child: Material(
+                    color: Colors.black54,
+                    child: SafeArea(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Card(
+                            key: const Key('notification-setup-guide'),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.secondaryContainer,
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.notifications_active_rounded,
+                                    size: 40,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSecondaryContainer,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    '检查铃声和震动',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleLarge,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    '部分手机在允许通知后，还需要在系统通知设置中手动开启铃声、震动和横幅。',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      TextButton(
+                                        onPressed:
+                                            _dismissNotificationSetupGuide,
+                                        child: const Text('稍后'),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      FilledButton.icon(
+                                        onPressed: _openNotificationSetup,
+                                        icon: const Icon(
+                                          Icons.settings_rounded,
+                                        ),
+                                        label: const Text('去检查'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_showBatteryOptimizationGuide)
+                Positioned.fill(
+                  child: Material(
+                    color: Colors.black54,
+                    child: SafeArea(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Card(
+                            key: const Key('battery-optimization-guide'),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.secondaryContainer,
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.battery_saver_rounded,
+                                    size: 40,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSecondaryContainer,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    '允许后台完成提醒',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleLarge,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    '请允许番茄日志忽略电池优化，减少锁屏或离开应用后计时完成提醒被系统延迟的可能。',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      TextButton(
+                                        onPressed:
+                                            _dismissBatteryOptimizationGuide,
+                                        child: const Text('稍后'),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      FilledButton.icon(
+                                        onPressed:
+                                            _openBatteryOptimizationSetup,
+                                        icon: const Icon(
+                                          Icons.battery_saver_rounded,
+                                        ),
+                                        label: const Text('去设置'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
                           ),
