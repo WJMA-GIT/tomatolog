@@ -17,31 +17,14 @@ import android.graphics.drawable.Icon
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 
 class TimerNotificationService : Service() {
-    private val handler = Handler(Looper.getMainLooper())
     private var activeTimer: ActiveTimer? = null
     private var completionPosted = false
     private var wakeLock: PowerManager.WakeLock? = null
-    private val finishAtDeadline =
-        object : Runnable {
-            override fun run() {
-                val active = activeTimer ?: return
-                val remainingMillis =
-                    (active.deadlineElapsedRealtime - SystemClock.elapsedRealtime())
-                        .coerceAtLeast(0)
-                if (remainingMillis == 0L) {
-                    finishTimer(active.notification)
-                } else {
-                    handler.postDelayed(this, remainingMillis)
-                }
-            }
-        }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -65,7 +48,6 @@ class TimerNotificationService : Service() {
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(finishAtDeadline)
         releaseWakeLock()
         activeTimer = null
         super.onDestroy()
@@ -75,21 +57,17 @@ class TimerNotificationService : Service() {
     private fun startTimer(timer: TimerNotification, requestedDeadlineWallClock: Long) {
         createChannels()
         completionPosted = false
-        handler.removeCallbacks(finishAtDeadline)
-        val existing = activeTimer
+        val deadlineWallClock =
+            requestedDeadlineWallClock.takeIf { it > 0L }
+                ?: (System.currentTimeMillis() + timer.remainingSeconds * 1000L)
         val active =
-            existing?.copy(notification = timer)
-                ?: ActiveTimer(
-                    notification = timer,
-                    deadlineElapsedRealtime =
-                        SystemClock.elapsedRealtime() +
-                            ((requestedDeadlineWallClock.takeIf { it > 0L }
-                                ?: (System.currentTimeMillis() + timer.remainingSeconds * 1000L)) -
-                                System.currentTimeMillis()).coerceAtLeast(0L),
-                    deadlineWallClock =
-                        requestedDeadlineWallClock.takeIf { it > 0L }
-                            ?: (System.currentTimeMillis() + timer.remainingSeconds * 1000L),
-                )
+            ActiveTimer(
+                notification = timer,
+                deadlineElapsedRealtime =
+                    SystemClock.elapsedRealtime() +
+                        (deadlineWallClock - System.currentTimeMillis()).coerceAtLeast(0L),
+                deadlineWallClock = deadlineWallClock,
+            )
         activeTimer = active
         acquireWakeLock(active)
         scheduleCompletion(this, active)
@@ -107,7 +85,6 @@ class TimerNotificationService : Service() {
         } else {
             startForeground(timerNotificationId, notification)
         }
-        handler.postDelayed(finishAtDeadline, remainingMillis)
     }
 
     @SuppressLint("MissingPermission")
@@ -136,7 +113,7 @@ class TimerNotificationService : Service() {
         val builder = notificationBuilder(timerChannelId)
         setTimerIcons(builder, timer)
         builder
-            .setContentTitle(timer.category)
+            .setContentTitle(timer.displayCategory)
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setTimeoutAfter((deadlineWallClock - System.currentTimeMillis()).coerceAtLeast(0L))
@@ -166,7 +143,6 @@ class TimerNotificationService : Service() {
     private fun finishTimer(timer: TimerNotification) {
         if (completionPosted) return
         completionPosted = true
-        handler.removeCallbacks(finishAtDeadline)
         activeTimer = null
         releaseWakeLock()
         cancelScheduledCompletion(this)
@@ -261,6 +237,11 @@ class TimerNotificationService : Service() {
         private const val extraColor = "color"
         private const val extraIcon = "icon"
         private const val extraDeadline = "deadline"
+        private const val extraIsInterval = "isInterval"
+        private const val extraCurrentCycle = "currentCycle"
+        private const val extraCycleCount = "cycleCount"
+        private const val extraFocusSeconds = "focusSeconds"
+        private const val extraIntervalSeconds = "intervalSeconds"
         private const val completionAlarmRequest = 27
         private val completionVibrationPattern = longArrayOf(0, 300, 180, 500)
 
@@ -334,6 +315,11 @@ class TimerNotificationService : Service() {
                     putExtra(extraColor, timer.color)
                     putExtra(extraIcon, timer.icon)
                     putExtra(extraDeadline, deadline)
+                    putExtra(extraIsInterval, timer.isInterval)
+                    putExtra(extraCurrentCycle, timer.currentCycle)
+                    putExtra(extraCycleCount, timer.cycleCount)
+                    putExtra(extraFocusSeconds, timer.focusSeconds)
+                    putExtra(extraIntervalSeconds, timer.intervalSeconds)
                 }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -359,6 +345,11 @@ class TimerNotificationService : Service() {
 
         internal fun completeFromAlarm(context: Context, alarmIntent: Intent) {
             val timer = alarmIntent.timerNotification() ?: return
+            val next = timer.nextStage()
+            if (next != null) {
+                show(context, next)
+                return
+            }
             val manager =
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             ensureChannels(context)
@@ -450,6 +441,11 @@ class TimerNotificationService : Service() {
             putExtra(extraTotal, timer.totalSeconds)
             putExtra(extraColor, timer.color)
             putExtra(extraIcon, timer.icon)
+            putExtra(extraIsInterval, timer.isInterval)
+            putExtra(extraCurrentCycle, timer.currentCycle)
+            putExtra(extraCycleCount, timer.cycleCount)
+            putExtra(extraFocusSeconds, timer.focusSeconds)
+            putExtra(extraIntervalSeconds, timer.intervalSeconds)
         }
 
         private fun Intent.timerNotification(): TimerNotification? {
@@ -460,6 +456,11 @@ class TimerNotificationService : Service() {
                 totalSeconds = getIntExtra(extraTotal, 1),
                 color = getIntExtra(extraColor, 0),
                 icon = getByteArrayExtra(extraIcon),
+                isInterval = getBooleanExtra(extraIsInterval, false),
+                currentCycle = getIntExtra(extraCurrentCycle, 1),
+                cycleCount = getIntExtra(extraCycleCount, 1),
+                focusSeconds = getIntExtra(extraFocusSeconds, 1),
+                intervalSeconds = getIntExtra(extraIntervalSeconds, 1),
             )
         }
     }
@@ -477,7 +478,33 @@ data class TimerNotification(
     val totalSeconds: Int,
     val color: Int,
     val icon: ByteArray?,
-)
+    val isInterval: Boolean,
+    val currentCycle: Int,
+    val cycleCount: Int,
+    val focusSeconds: Int,
+    val intervalSeconds: Int,
+) {
+    val displayCategory: String
+        get() = if (isInterval) "间隔休息" else category
+
+    fun nextStage(): TimerNotification? =
+        if (isInterval) {
+            copy(
+                remainingSeconds = focusSeconds,
+                totalSeconds = focusSeconds,
+                isInterval = false,
+                currentCycle = currentCycle + 1,
+            )
+        } else if (currentCycle < cycleCount) {
+            copy(
+                remainingSeconds = intervalSeconds,
+                totalSeconds = intervalSeconds,
+                isInterval = true,
+            )
+        } else {
+            null
+        }
+}
 
 private data class ActiveTimer(
     val notification: TimerNotification,

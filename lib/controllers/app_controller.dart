@@ -12,7 +12,7 @@ import '../services/app_platform_service.dart';
 import '../services/app_storage.dart';
 import '../services/webdav_sync_manager.dart';
 
-enum TimerPhase { idle, running }
+enum TimerPhase { idle, running, interval }
 
 enum AppThemePreference { system, light, dark }
 
@@ -27,6 +27,8 @@ class AppController extends ChangeNotifier {
   static const maxCategoryNameLength = 12;
   static const maxMinutes = 1440;
   static const timerDialMinutes = 60;
+  static const maxCycleCount = 10;
+  static const maxIntervalMinutes = 60;
   static const defaultAccentColorValue = 0xFFE05446;
 
   final AppStorage _storage;
@@ -49,6 +51,10 @@ class AppController extends ChangeNotifier {
   String? _selectedCategoryId;
   int _plannedMinutes = 25;
   int _remainingSeconds = 25 * 60;
+  int _cycleCount = 1;
+  int _intervalMinutes = 5;
+  bool _recordIntervals = false;
+  int _currentCycle = 1;
   DateTime? _sessionStartedAt;
   DateTime? _targetEndAt;
   AppThemePreference _themePreference = AppThemePreference.system;
@@ -62,6 +68,14 @@ class AppController extends ChangeNotifier {
   int get plannedMinutes => _plannedMinutes;
 
   int get remainingSeconds => _remainingSeconds;
+
+  int get cycleCount => _cycleCount;
+
+  int get intervalMinutes => _intervalMinutes;
+
+  bool get recordIntervals => _recordIntervals;
+
+  int get currentCycle => _currentCycle;
 
   AppThemePreference get themePreference => _themePreference;
 
@@ -83,7 +97,10 @@ class AppController extends ChangeNotifier {
 
   FocusCategory? get selectedCategory => categoryById(selectedCategoryId ?? '');
 
-  int get elapsedSeconds => plannedMinutes * 60 - remainingSeconds;
+  int get currentPhaseSeconds =>
+      (phase == TimerPhase.interval ? intervalMinutes : plannedMinutes) * 60;
+
+  int get elapsedSeconds => currentPhaseSeconds - remainingSeconds;
 
   double get progress =>
       (remainingSeconds / (timerDialMinutes * 60)).clamp(0.0, 1.0).toDouble();
@@ -141,6 +158,9 @@ class AppController extends ChangeNotifier {
       _accentColorValue =
           data['accentColorValue'] as int? ?? defaultAccentColorValue;
       _backgroundImagePath = data['backgroundImagePath'] as String?;
+      _cycleCount = _validCycleCount(data['cycleCount']);
+      _intervalMinutes = _validIntervalMinutes(data['intervalMinutes']);
+      _recordIntervals = data['recordIntervals'] == true;
       _ensureSelectedCategory();
       _restoreTimer(timerData);
     } on FormatException {
@@ -227,25 +247,54 @@ class AppController extends ChangeNotifier {
     _schedulePersist();
   }
 
+  void setCycleCount(int count) {
+    if (phase != TimerPhase.idle ||
+        count <= 0 ||
+        count > maxCycleCount ||
+        cycleCount == count) {
+      return;
+    }
+    _cycleCount = count;
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  void setIntervalMinutes(int minutes) {
+    if (phase != TimerPhase.idle ||
+        minutes <= 0 ||
+        minutes > maxIntervalMinutes ||
+        intervalMinutes == minutes) {
+      return;
+    }
+    _intervalMinutes = minutes;
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  void setRecordIntervals(bool value) {
+    if (phase != TimerPhase.idle || recordIntervals == value) return;
+    _recordIntervals = value;
+    notifyListeners();
+    _schedulePersist();
+  }
+
   void startTimer() {
     if (phase != TimerPhase.idle || selectedCategory == null) return;
-    final now = DateTime.now();
-    _remainingSeconds = plannedMinutes * 60;
-    _sessionStartedAt = now;
-    _targetEndAt = now.add(Duration(seconds: remainingSeconds));
-    _phase = TimerPhase.running;
-    _startTicker();
-    _showTimerNotification();
+    _currentCycle = 1;
+    _beginTimerPhase(TimerPhase.running, DateTime.now());
     notifyListeners();
     _schedulePersist();
   }
 
   void stopTimer({bool saveInterrupted = true}) {
     if (phase == TimerPhase.idle) return;
-    if (phase == TimerPhase.running) _updateRemaining();
+    _updateRemaining();
     _ticker?.cancel();
     final actual = elapsedSeconds;
-    if (saveInterrupted && actual > 0 && _sessionStartedAt != null) {
+    if (saveInterrupted &&
+        actual > 0 &&
+        _sessionStartedAt != null &&
+        (phase == TimerPhase.running || recordIntervals)) {
       final now = DateTime.now();
       _logs.insert(
         0,
@@ -254,9 +303,11 @@ class AppController extends ChangeNotifier {
           categoryId: selectedCategoryId!,
           startedAt: _sessionStartedAt!,
           endedAt: now,
-          plannedSeconds: plannedMinutes * 60,
+          plannedSeconds: currentPhaseSeconds,
           actualSeconds: actual,
           status: LogStatus.interrupted,
+          kind: phase == TimerPhase.interval ? LogKind.interval : LogKind.focus,
+          note: phase == TimerPhase.interval ? '循环间隔' : null,
         ),
       );
       _syncPlanCompletions(now);
@@ -577,27 +628,70 @@ class AppController extends ChangeNotifier {
 
   void _completeTimer() {
     _ticker?.cancel();
-    final start =
-        _sessionStartedAt ??
-        DateTime.now().subtract(Duration(minutes: plannedMinutes));
-    final endedAt = DateTime.now();
-    _logs.insert(
-      0,
-      TimeLog(
-        id: _newId(),
-        categoryId: selectedCategoryId!,
-        startedAt: start,
-        endedAt: endedAt,
-        plannedSeconds: plannedMinutes * 60,
-        actualSeconds: plannedMinutes * 60,
-        status: LogStatus.completed,
-      ),
-    );
-    _syncPlanCompletions(endedAt);
-    _resetTimer();
-    unawaited(_platform?.completeTimer());
+    final endedAt = _targetEndAt ?? DateTime.now();
+    final finished = _advanceTimerPhase(endedAt);
+    if (finished) {
+      unawaited(_platform?.completeTimer());
+    } else {
+      _startTicker();
+      _showTimerNotification();
+    }
     notifyListeners();
     _schedulePersist();
+  }
+
+  bool _advanceTimerPhase(DateTime endedAt) {
+    final completedPhase = phase;
+    final start =
+        _sessionStartedAt ??
+        endedAt.subtract(Duration(seconds: currentPhaseSeconds));
+    if (completedPhase == TimerPhase.running || recordIntervals) {
+      _logs.insert(
+        0,
+        TimeLog(
+          id: _newId(),
+          categoryId: selectedCategoryId!,
+          startedAt: start,
+          endedAt: endedAt,
+          plannedSeconds: currentPhaseSeconds,
+          actualSeconds: currentPhaseSeconds,
+          status: LogStatus.completed,
+          kind: completedPhase == TimerPhase.interval
+              ? LogKind.interval
+              : LogKind.focus,
+          note: completedPhase == TimerPhase.interval ? '循环间隔' : null,
+        ),
+      );
+      _syncPlanCompletions(endedAt);
+    }
+    if (completedPhase == TimerPhase.running && currentCycle < cycleCount) {
+      _setTimerPhase(TimerPhase.interval, endedAt);
+    } else if (completedPhase == TimerPhase.interval) {
+      _currentCycle++;
+      _setTimerPhase(TimerPhase.running, endedAt);
+    } else {
+      _resetTimer();
+      return true;
+    }
+    return false;
+  }
+
+  void _beginTimerPhase(TimerPhase nextPhase, DateTime startedAt) {
+    _setTimerPhase(nextPhase, startedAt);
+    _startTicker();
+    _showTimerNotification();
+  }
+
+  void _setTimerPhase(TimerPhase nextPhase, DateTime startedAt) {
+    _phase = nextPhase;
+    _remainingSeconds = currentPhaseSeconds;
+    _sessionStartedAt = startedAt;
+    _targetEndAt = startedAt.add(Duration(seconds: remainingSeconds));
+  }
+
+  @visibleForTesting
+  void completeCurrentPhaseForTesting() {
+    if (phase != TimerPhase.idle) _completeTimer();
   }
 
   void _resetTimer() {
@@ -605,6 +699,7 @@ class AppController extends ChangeNotifier {
     _remainingSeconds = plannedMinutes * 60;
     _sessionStartedAt = null;
     _targetEndAt = null;
+    _currentCycle = 1;
   }
 
   void _restoreTimer(Map<String, Object?>? timerData) {
@@ -612,8 +707,11 @@ class AppController extends ChangeNotifier {
     if (timerData == null) return;
 
     _phase = _parseTimerPhase(timerData['phase']);
+    _currentCycle = (timerData['currentCycle'] as int? ?? 1)
+        .clamp(1, cycleCount)
+        .toInt();
     final savedRemaining = timerData['remainingSeconds'] as int?;
-    final maximumSeconds = plannedMinutes * 60;
+    final maximumSeconds = currentPhaseSeconds;
     if (savedRemaining == null) {
       _remainingSeconds = maximumSeconds;
     } else if (savedRemaining < 0) {
@@ -632,17 +730,27 @@ class AppController extends ChangeNotifier {
       _resetTimer();
     } else if (_sessionStartedAt == null) {
       _resetTimer();
-    } else if (phase == TimerPhase.running && _targetEndAt != null) {
-      _updateRemaining();
-      if (remainingSeconds <= 0) {
-        _completeTimer();
-      } else {
-        _startTicker();
-        _showTimerNotification();
-      }
+    } else if (_targetEndAt != null) {
+      _resumeRestoredTimer();
     } else if (phase == TimerPhase.running) {
       // Older versions could persist a paused timer without a deadline.
       _targetEndAt = DateTime.now().add(Duration(seconds: remainingSeconds));
+      _startTicker();
+      _showTimerNotification();
+    } else {
+      _resetTimer();
+    }
+  }
+
+  void _resumeRestoredTimer() {
+    final now = DateTime.now();
+    while (phase != TimerPhase.idle &&
+        _targetEndAt != null &&
+        !_targetEndAt!.isAfter(now)) {
+      if (_advanceTimerPhase(_targetEndAt!)) break;
+    }
+    if (phase != TimerPhase.idle) {
+      _updateRemaining();
       _startTicker();
       _showTimerNotification();
     }
@@ -721,6 +829,7 @@ class AppController extends ChangeNotifier {
     final secondsByCategory = <String, int>{};
     for (final log in _logs) {
       if (DailyPlan.dayKey(log.startedAt) != DailyPlan.dayKey(date)) continue;
+      if (log.kind == LogKind.interval) continue;
       secondsByCategory.update(
         log.categoryId,
         (seconds) => seconds + log.actualSeconds,
@@ -761,11 +870,15 @@ class AppController extends ChangeNotifier {
     'themePreference': themePreference.name,
     'accentColorValue': accentColorValue,
     'backgroundImagePath': backgroundImagePath,
+    'cycleCount': cycleCount,
+    'intervalMinutes': intervalMinutes,
+    'recordIntervals': recordIntervals,
     'timer': {
       'phase': phase.name,
       'remainingSeconds': remainingSeconds,
       'sessionStartedAt': _sessionStartedAt?.toIso8601String(),
       'targetEndAt': _targetEndAt?.toIso8601String(),
+      'currentCycle': currentCycle,
     },
   };
 
@@ -779,6 +892,7 @@ class AppController extends ChangeNotifier {
       'remainingSeconds': 25 * 60,
       'sessionStartedAt': null,
       'targetEndAt': null,
+      'currentCycle': 1,
     };
     final backgroundPath = _backgroundImagePath;
     data.remove('backgroundImagePath');
@@ -818,6 +932,7 @@ class AppController extends ChangeNotifier {
       'remainingSeconds': 25 * 60,
       'sessionStartedAt': null,
       'targetEndAt': null,
+      'currentCycle': 1,
     };
     _ticker?.cancel();
     await _platform?.cancelTimer();
@@ -871,6 +986,10 @@ class AppController extends ChangeNotifier {
     _phase = TimerPhase.idle;
     _plannedMinutes = 25;
     _remainingSeconds = plannedMinutes * 60;
+    _cycleCount = 1;
+    _intervalMinutes = 5;
+    _recordIntervals = false;
+    _currentCycle = 1;
     _selectedCategoryId = _categories.first.id;
     _sessionStartedAt = null;
     _targetEndAt = null;
@@ -883,7 +1002,16 @@ class AppController extends ChangeNotifier {
     return value is int && value > 0 && value <= timerDialMinutes ? value : 25;
   }
 
+  static int _validCycleCount(Object? value) {
+    return value is int && value > 0 && value <= maxCycleCount ? value : 1;
+  }
+
+  static int _validIntervalMinutes(Object? value) {
+    return value is int && value > 0 && value <= maxIntervalMinutes ? value : 5;
+  }
+
   static TimerPhase _parseTimerPhase(Object? value) {
+    if (value == TimerPhase.interval.name) return TimerPhase.interval;
     return value == 'running' || value == 'paused'
         ? TimerPhase.running
         : TimerPhase.idle;
@@ -905,7 +1033,12 @@ class AppController extends ChangeNotifier {
         iconKey: category.iconKey,
         colorValue: category.colorValue,
         remainingSeconds: remainingSeconds,
-        totalSeconds: plannedMinutes * 60,
+        totalSeconds: currentPhaseSeconds,
+        isInterval: phase == TimerPhase.interval,
+        currentCycle: currentCycle,
+        cycleCount: cycleCount,
+        focusSeconds: plannedMinutes * 60,
+        intervalSeconds: intervalMinutes * 60,
       ),
     );
   }

@@ -73,12 +73,22 @@ class AppPlatformService {
     required int colorValue,
     required int remainingSeconds,
     required int totalSeconds,
+    required bool isInterval,
+    required int currentCycle,
+    required int cycleCount,
+    required int focusSeconds,
+    required int intervalSeconds,
   }) async {
     final arguments = <String, Object?>{
       'category': categoryName,
       'remainingSeconds': remainingSeconds,
       'totalSeconds': totalSeconds,
       'color': colorValue,
+      'isInterval': isInterval,
+      'currentCycle': currentCycle,
+      'cycleCount': cycleCount,
+      'focusSeconds': focusSeconds,
+      'intervalSeconds': intervalSeconds,
     };
     final icon = await _notificationIcon(iconKey);
     await _invoke<void>(

@@ -1,5 +1,7 @@
 enum LogStatus { completed, interrupted, manuallyAdded }
 
+enum LogKind { focus, interval }
+
 class TimeLog {
   const TimeLog({
     required this.id,
@@ -9,6 +11,7 @@ class TimeLog {
     required this.plannedSeconds,
     required this.actualSeconds,
     required this.status,
+    this.kind = LogKind.focus,
     this.note,
   });
 
@@ -19,6 +22,7 @@ class TimeLog {
   final int plannedSeconds;
   final int actualSeconds;
   final LogStatus status;
+  final LogKind kind;
   final String? note;
 
   Map<String, Object?> toJson() => {
@@ -29,6 +33,7 @@ class TimeLog {
     'plannedSeconds': plannedSeconds,
     'actualSeconds': actualSeconds,
     'status': status.name,
+    'kind': kind.name,
     'note': note,
   };
 
@@ -41,6 +46,7 @@ class TimeLog {
       plannedSeconds: json['plannedSeconds']! as int,
       actualSeconds: json['actualSeconds']! as int,
       status: LogStatus.values.byName(json['status']! as String),
+      kind: LogKind.values.byName((json['kind'] as String?) ?? 'focus'),
       note: json['note'] as String?,
     );
   }

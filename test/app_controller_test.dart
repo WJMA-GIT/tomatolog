@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomatolog/controllers/app_controller.dart';
 import 'package:tomatolog/models/daily_plan.dart';
+import 'package:tomatolog/models/time_log.dart';
 import 'package:tomatolog/services/app_platform_service.dart';
 import 'package:tomatolog/services/app_storage.dart';
 
@@ -45,6 +46,150 @@ void main() {
     expect(controller.phase, TimerPhase.idle);
     expect(controller.logs, isEmpty);
     controller.dispose();
+  });
+
+  test(
+    'runs configured focus cycles and optionally records intervals',
+    () async {
+      final controller = AppController(MemoryAppStorage());
+      await controller.load();
+      controller
+        ..setPlannedMinutes(1)
+        ..setCycleCount(2)
+        ..setIntervalMinutes(1)
+        ..startTimer();
+
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.phase, TimerPhase.interval);
+      expect(controller.currentCycle, 1);
+      expect(controller.logs, hasLength(1));
+
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.phase, TimerPhase.running);
+      expect(controller.currentCycle, 2);
+      expect(controller.logs, hasLength(1));
+
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.phase, TimerPhase.idle);
+      expect(controller.logs, hasLength(2));
+      expect(controller.logs.every((log) => log.note == null), isTrue);
+      controller.dispose();
+
+      final recorded = AppController(MemoryAppStorage());
+      await recorded.load();
+      recorded
+        ..setPlannedMinutes(1)
+        ..setCycleCount(2)
+        ..setIntervalMinutes(1)
+        ..setRecordIntervals(true)
+        ..startTimer();
+      recorded.completeCurrentPhaseForTesting();
+      recorded.completeCurrentPhaseForTesting();
+      recorded.completeCurrentPhaseForTesting();
+
+      expect(recorded.logs, hasLength(3));
+      expect(
+        recorded.logs.where((log) => log.kind == LogKind.interval),
+        hasLength(1),
+      );
+      expect(
+        recorded.logs.fold<int>(0, (sum, log) => sum + log.actualSeconds),
+        3 * 60,
+      );
+      recorded.dispose();
+    },
+  );
+
+  test(
+    'recorded intervals count in statistics but not daily plan progress',
+    () async {
+      final controller = AppController(MemoryAppStorage());
+      await controller.load();
+      final today = DateTime.now();
+      controller.addPlan(
+        startDate: today,
+        endDate: today,
+        categoryId: 'work',
+        plannedMinutes: 2,
+      );
+      controller
+        ..setPlannedMinutes(1)
+        ..setCycleCount(2)
+        ..setIntervalMinutes(1)
+        ..setRecordIntervals(true)
+        ..startTimer();
+
+      controller.completeCurrentPhaseForTesting();
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.logs, hasLength(2));
+      expect(controller.plans.single.isCompletedOn(today), isFalse);
+
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.plans.single.isCompletedOn(today), isTrue);
+      expect(
+        controller.logs.fold<int>(0, (sum, log) => sum + log.actualSeconds),
+        3 * 60,
+      );
+      controller.dispose();
+    },
+  );
+
+  test('persists cycle settings', () async {
+    final storage = MemoryAppStorage();
+    final controller = AppController(storage);
+    await controller.load();
+    controller
+      ..setCycleCount(4)
+      ..setIntervalMinutes(8)
+      ..setRecordIntervals(true);
+    await Future<void>.delayed(Duration.zero);
+
+    final restored = AppController(storage);
+    await restored.load();
+    expect(restored.cycleCount, 4);
+    expect(restored.intervalMinutes, 8);
+    expect(restored.recordIntervals, isTrue);
+    controller.dispose();
+    restored.dispose();
+  });
+
+  test('restores across elapsed focus and interval phases', () async {
+    final storage = MemoryAppStorage();
+    final initial = AppController(storage);
+    await initial.load();
+    await Future<void>.delayed(Duration.zero);
+    initial.dispose();
+
+    final now = DateTime.now();
+    storage.value!
+      ..['plannedMinutes'] = 1
+      ..['cycleCount'] = 3
+      ..['intervalMinutes'] = 1
+      ..['recordIntervals'] = true
+      ..['timer'] = {
+        'phase': 'running',
+        'remainingSeconds': 0,
+        'sessionStartedAt': now
+            .subtract(const Duration(seconds: 130))
+            .toIso8601String(),
+        'targetEndAt': now
+            .subtract(const Duration(seconds: 70))
+            .toIso8601String(),
+        'currentCycle': 1,
+      };
+
+    final restored = AppController(storage);
+    await restored.load();
+    expect(restored.phase, TimerPhase.running);
+    expect(restored.currentCycle, 2);
+    expect(restored.remainingSeconds, inInclusiveRange(49, 50));
+    expect(restored.logs, hasLength(2));
+    expect(
+      restored.logs.where((log) => log.kind == LogKind.interval),
+      hasLength(1),
+    );
+    restored.stopTimer(saveInterrupted: false);
+    restored.dispose();
   });
 
   test('restores a legacy paused timer as running', () async {
@@ -369,6 +514,11 @@ void main() {
       expect(arguments['category'], '工作');
       expect(arguments['remainingSeconds'], 25 * 60);
       expect(arguments['totalSeconds'], 25 * 60);
+      expect(arguments['isInterval'], isFalse);
+      expect(arguments['currentCycle'], 1);
+      expect(arguments['cycleCount'], 1);
+      expect(arguments['focusSeconds'], 25 * 60);
+      expect(arguments['intervalSeconds'], 5 * 60);
       expect(arguments, isNot(contains('isRunning')));
       expect(arguments['icon'], isNotNull);
 

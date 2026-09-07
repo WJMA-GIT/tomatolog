@@ -32,7 +32,7 @@ class TimerScreen extends StatelessWidget {
           const SizedBox(height: 30),
           Center(
             child: Semantics(
-              label: '计时圆环，${controller.plannedMinutes} 分钟',
+              label: '计时圆环，${controller.remainingSeconds} 秒',
               hint: isIdle ? '沿圆环拖动可设置 1 到 60 分钟' : null,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -72,7 +72,10 @@ class TimerScreen extends StatelessWidget {
                           Text(
                             switch (controller.phase) {
                               TimerPhase.idle => '准备开始',
-                              TimerPhase.running => '专注中',
+                              TimerPhase.running =>
+                                '第 ${controller.currentCycle}/${controller.cycleCount} 轮 · 专注中',
+                              TimerPhase.interval =>
+                                '第 ${controller.currentCycle}/${controller.cycleCount} 轮完成 · 间隔中',
                             },
                             style: theme.textTheme.titleMedium?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
@@ -101,6 +104,8 @@ class TimerScreen extends StatelessWidget {
                 showSelectedIcon: false,
               ),
             ),
+            const SizedBox(height: 18),
+            _CycleSettings(controller: controller),
             const SizedBox(height: 22),
           ],
           SizedBox(
@@ -111,19 +116,19 @@ class TimerScreen extends StatelessWidget {
                   ? null
                   : switch (controller.phase) {
                       TimerPhase.idle => controller.startTimer,
-                      TimerPhase.running => () => showTimerEndDialog(
-                        context,
-                        controller,
-                      ),
+                      TimerPhase.running || TimerPhase.interval =>
+                        () => showTimerEndDialog(context, controller),
                     },
               icon: Icon(
-                controller.phase == TimerPhase.running
+                controller.phase == TimerPhase.running ||
+                        controller.phase == TimerPhase.interval
                     ? Icons.stop_circle_outlined
                     : Icons.play_arrow_rounded,
               ),
               label: Text(switch (controller.phase) {
                 TimerPhase.idle => '开始专注',
                 TimerPhase.running => '结束',
+                TimerPhase.interval => '结束',
               }),
             ),
           ),
@@ -142,6 +147,117 @@ class TimerScreen extends StatelessWidget {
         .round()
         .clamp(1, AppController.timerDialMinutes);
     controller.setPlannedMinutes(minutes);
+  }
+}
+
+class _CycleSettings extends StatelessWidget {
+  const _CycleSettings({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = controller.cycleCount > 1;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+        child: Column(
+          children: [
+            _CounterRow(
+              label: '循环次数',
+              value: controller.cycleCount,
+              suffix: '轮',
+              onDecrease: controller.cycleCount > 1
+                  ? () => controller.setCycleCount(controller.cycleCount - 1)
+                  : null,
+              onIncrease: controller.cycleCount < AppController.maxCycleCount
+                  ? () => controller.setCycleCount(controller.cycleCount + 1)
+                  : null,
+            ),
+            _CounterRow(
+              label: '循环间隔',
+              value: controller.intervalMinutes,
+              suffix: '分钟',
+              enabled: enabled,
+              onDecrease: enabled && controller.intervalMinutes > 1
+                  ? () => controller.setIntervalMinutes(
+                      controller.intervalMinutes - 1,
+                    )
+                  : null,
+              onIncrease:
+                  enabled &&
+                      controller.intervalMinutes <
+                          AppController.maxIntervalMinutes
+                  ? () => controller.setIntervalMinutes(
+                      controller.intervalMinutes + 1,
+                    )
+                  : null,
+            ),
+            SwitchListTile(
+              contentPadding: const EdgeInsets.only(left: 0),
+              title: const Text('间隔计入统计'),
+              subtitle: Text(enabled ? '间隔时间会归入当前分类' : '循环次数大于 1 时可用'),
+              value: enabled && controller.recordIntervals,
+              onChanged: enabled ? controller.setRecordIntervals : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CounterRow extends StatelessWidget {
+  const _CounterRow({
+    required this.label,
+    required this.value,
+    required this.suffix,
+    this.enabled = true,
+    this.onDecrease,
+    this.onIncrease,
+  });
+
+  final String label;
+  final int value;
+  final String suffix;
+  final bool enabled;
+  final VoidCallback? onDecrease;
+  final VoidCallback? onIncrease;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: enabled
+                  ? null
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: '减少$label',
+          onPressed: enabled ? onDecrease : null,
+          icon: const Icon(Icons.remove_circle_outline_rounded),
+        ),
+        SizedBox(
+          width: 58,
+          child: Text(
+            '$value $suffix',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        IconButton(
+          tooltip: '增加$label',
+          onPressed: enabled ? onIncrease : null,
+          icon: const Icon(Icons.add_circle_outline_rounded),
+        ),
+      ],
+    );
   }
 }
 

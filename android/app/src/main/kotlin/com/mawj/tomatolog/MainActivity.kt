@@ -96,6 +96,11 @@ class MainActivity : FlutterActivity() {
                             totalSeconds = call.argument<Int>("totalSeconds") ?: 1,
                             color = call.argument<Number>("color")?.toInt() ?: 0,
                             icon = call.argument<ByteArray>("icon"),
+                            isInterval = call.argument<Boolean>("isInterval") ?: false,
+                            currentCycle = call.argument<Int>("currentCycle") ?: 1,
+                            cycleCount = call.argument<Int>("cycleCount") ?: 1,
+                            focusSeconds = call.argument<Int>("focusSeconds") ?: 1,
+                            intervalSeconds = call.argument<Int>("intervalSeconds") ?: 1,
                         ),
                     )
                     result.success(null)

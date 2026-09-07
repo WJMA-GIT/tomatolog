@@ -375,4 +375,31 @@ void main() {
     expect(ring().value, closeTo(15 / 60, 0.001));
     controller.dispose();
   });
+
+  testWidgets('configures timer cycles and interval statistics', (
+    tester,
+  ) async {
+    final controller = AppController(MemoryAppStorage());
+    await controller.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ListenableBuilder(
+          listenable: controller,
+          builder: (_, _) =>
+              Scaffold(body: TimerScreen(controller: controller)),
+        ),
+      ),
+    );
+
+    await tester.ensureVisible(find.byTooltip('增加循环次数'));
+    await tester.tap(find.byTooltip('增加循环次数'));
+    await tester.pump();
+    expect(controller.cycleCount, 2);
+
+    await tester.ensureVisible(find.text('间隔计入统计'));
+    await tester.tap(find.text('间隔计入统计'));
+    await tester.pump();
+    expect(controller.recordIntervals, isTrue);
+    controller.dispose();
+  });
 }
