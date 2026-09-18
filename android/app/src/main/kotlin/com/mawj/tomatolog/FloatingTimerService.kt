@@ -13,6 +13,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Chronometer
 import android.widget.ImageView
@@ -126,6 +127,8 @@ class FloatingTimerService : Service() {
         var startY = 0
         var touchX = 0f
         var touchY = 0f
+        var moved = false
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
         view.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -133,16 +136,29 @@ class FloatingTimerService : Service() {
                     startY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
+                    moved = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = startX + (event.rawX - touchX).roundToInt()
-                    params.y = startY + (event.rawY - touchY).roundToInt()
+                    val deltaX = event.rawX - touchX
+                    val deltaY = event.rawY - touchY
+                    moved = moved || deltaX * deltaX + deltaY * deltaY > touchSlop * touchSlop
+                    params.x = startX + deltaX.roundToInt()
+                    params.y = startY + deltaY.roundToInt()
                     positionX = params.x
                     positionY = params.y
                     windowManager.updateViewLayout(view, params)
                     true
                 }
+                MotionEvent.ACTION_UP -> {
+                    if (!moved) {
+                        startActivity(Intent(this, MainActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                        })
+                    }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> true
                 else -> false
             }
         }
