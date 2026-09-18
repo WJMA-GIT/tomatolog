@@ -1,0 +1,62 @@
+name: Release unsigned iOS IPA
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag, for example v0.0.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          cache: true
+
+      - name: Test
+        run: |
+          flutter pub get
+          flutter test
+
+      - name: Build unsigned IPA
+        run: |
+          version="$(awk '/^version:/{print $2}' pubspec.yaml)"
+          version="${version%%+*}"
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --build-name "$version" \
+            --build-number "$GITHUB_RUN_NUMBER"
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload tomatolog-ios-unsigned.ipa
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" \
+              --target "$GITHUB_SHA" \
+              --title "番茄日志 $RELEASE_TAG" \
+              --generate-notes
+          gh release upload "$RELEASE_TAG" tomatolog-ios-unsigned.ipa --clobber

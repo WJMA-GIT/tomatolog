@@ -16,16 +16,25 @@ void main() {
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    final controller = AppController(MemoryAppStorage(), AppPlatformService());
-    await controller.load();
+    try {
+      final controller = AppController(
+        MemoryAppStorage(),
+        AppPlatformService(),
+      );
+      await controller.load();
 
-    await tester.pumpWidget(TomatoLogApp(controller: controller));
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(TomatoLogApp(controller: controller));
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('notification-permission-guide')), findsNothing);
-    expect(find.text('悬浮倒计时'), findsNothing);
-    controller.dispose();
+      expect(
+        find.byKey(const Key('notification-permission-guide')),
+        findsNothing,
+      );
+      expect(find.text('悬浮倒计时'), findsNothing);
+      controller.dispose();
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('shows the timer and navigates to categories', (tester) async {
