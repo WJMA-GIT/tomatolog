@@ -44,6 +44,26 @@ class MainActivity : FlutterActivity() {
                     requestBatteryOptimizationExemption()
                     result.success(null)
                 }
+                "floatingTimerPermissionGranted" ->
+                    result.success(Settings.canDrawOverlays(this))
+                "requestFloatingTimerPermission" -> {
+                    requestFloatingTimerPermission()
+                    result.success(null)
+                }
+                "showFloatingTimer" -> {
+                    FloatingTimerService.show(
+                        context = this,
+                        category = call.argument<String>("category").orEmpty(),
+                        remainingSeconds = call.argument<Int>("remainingSeconds") ?: 0,
+                        color = call.argument<Number>("color")?.toInt() ?: 0,
+                        icon = call.argument<ByteArray>("icon"),
+                    )
+                    result.success(null)
+                }
+                "hideFloatingTimer" -> {
+                    FloatingTimerService.hide(this)
+                    result.success(null)
+                }
                 "openCompletionNotificationSettings" -> {
                     openCompletionNotificationSettings()
                     result.success(null)
@@ -96,11 +116,15 @@ class MainActivity : FlutterActivity() {
                             totalSeconds = call.argument<Int>("totalSeconds") ?: 1,
                             color = call.argument<Number>("color")?.toInt() ?: 0,
                             icon = call.argument<ByteArray>("icon"),
-                            isInterval = call.argument<Boolean>("isInterval") ?: false,
+                            phase = call.argument<String>("phase") ?: "running",
                             currentCycle = call.argument<Int>("currentCycle") ?: 1,
                             cycleCount = call.argument<Int>("cycleCount") ?: 1,
+                            currentGroup = call.argument<Int>("currentGroup") ?: 1,
+                            groupCount = call.argument<Int>("groupCount") ?: 1,
                             focusSeconds = call.argument<Int>("focusSeconds") ?: 1,
                             intervalSeconds = call.argument<Int>("intervalSeconds") ?: 1,
+                            longIntervalSeconds =
+                                call.argument<Int>("longIntervalSeconds") ?: 1,
                         ),
                     )
                     result.success(null)
@@ -108,10 +132,12 @@ class MainActivity : FlutterActivity() {
                 "cancelTimer" -> {
                     pendingNotification = null
                     TimerNotificationService.cancel(this)
+                    FloatingTimerService.hide(this)
                     result.success(null)
                 }
                 "completeTimer" -> {
                     TimerNotificationService.complete(this)
+                    FloatingTimerService.hide(this)
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -206,6 +232,17 @@ class MainActivity : FlutterActivity() {
             }
         runCatching { startActivity(request) }.onFailure {
             startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+    }
+
+    private fun requestFloatingTimerPermission() {
+        if (Settings.canDrawOverlays(this)) return
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:$packageName"),
+        )
+        runCatching { startActivity(intent) }.onFailure {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
         }
     }
 

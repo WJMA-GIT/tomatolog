@@ -48,6 +48,18 @@ void main() {
     controller.dispose();
   });
 
+  test('uses standard pomodoro defaults', () async {
+    final controller = AppController(MemoryAppStorage());
+    await controller.load();
+
+    expect(controller.plannedMinutes, 25);
+    expect(controller.intervalMinutes, 5);
+    expect(controller.cycleCount, 4);
+    expect(controller.longIntervalMinutes, 15);
+    expect(controller.groupCount, 1);
+    controller.dispose();
+  });
+
   test(
     'runs configured focus cycles and optionally records intervals',
     () async {
@@ -57,6 +69,7 @@ void main() {
         ..setPlannedMinutes(1)
         ..setCycleCount(2)
         ..setIntervalMinutes(1)
+        ..setLongIntervalMinutes(1)
         ..startTimer();
 
       controller.completeCurrentPhaseForTesting();
@@ -70,6 +83,8 @@ void main() {
       expect(controller.logs, hasLength(1));
 
       controller.completeCurrentPhaseForTesting();
+      expect(controller.phase, TimerPhase.longInterval);
+      controller.completeCurrentPhaseForTesting();
       expect(controller.phase, TimerPhase.idle);
       expect(controller.logs, hasLength(2));
       expect(controller.logs.every((log) => log.note == null), isTrue);
@@ -81,20 +96,22 @@ void main() {
         ..setPlannedMinutes(1)
         ..setCycleCount(2)
         ..setIntervalMinutes(1)
+        ..setLongIntervalMinutes(1)
         ..setRecordIntervals(true)
         ..startTimer();
       recorded.completeCurrentPhaseForTesting();
       recorded.completeCurrentPhaseForTesting();
       recorded.completeCurrentPhaseForTesting();
+      recorded.completeCurrentPhaseForTesting();
 
-      expect(recorded.logs, hasLength(3));
+      expect(recorded.logs, hasLength(4));
       expect(
         recorded.logs.where((log) => log.kind == LogKind.interval),
-        hasLength(1),
+        hasLength(2),
       );
       expect(
         recorded.logs.fold<int>(0, (sum, log) => sum + log.actualSeconds),
-        3 * 60,
+        4 * 60,
       );
       recorded.dispose();
     },
@@ -116,6 +133,7 @@ void main() {
         ..setPlannedMinutes(1)
         ..setCycleCount(2)
         ..setIntervalMinutes(1)
+        ..setLongIntervalMinutes(1)
         ..setRecordIntervals(true)
         ..startTimer();
 
@@ -126,10 +144,52 @@ void main() {
 
       controller.completeCurrentPhaseForTesting();
       expect(controller.plans.single.isCompletedOn(today), isTrue);
+      expect(controller.phase, TimerPhase.longInterval);
+      controller.completeCurrentPhaseForTesting();
       expect(
         controller.logs.fold<int>(0, (sum, log) => sum + log.actualSeconds),
-        3 * 60,
+        4 * 60,
       );
+      controller.dispose();
+    },
+  );
+
+  test(
+    'runs short breaks within groups and long breaks between groups',
+    () async {
+      final controller = AppController(MemoryAppStorage());
+      await controller.load();
+      controller
+        ..setPlannedMinutes(1)
+        ..setCycleCount(2)
+        ..setGroupCount(2)
+        ..setIntervalMinutes(1)
+        ..setLongIntervalMinutes(1)
+        ..setRecordIntervals(true)
+        ..startTimer();
+
+      expect(controller.currentGroup, 1);
+      expect(controller.currentCycle, 1);
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.phase, TimerPhase.interval);
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.currentCycle, 2);
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.phase, TimerPhase.longInterval);
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.phase, TimerPhase.running);
+      expect(controller.currentGroup, 2);
+      expect(controller.currentCycle, 1);
+      controller.completeCurrentPhaseForTesting();
+      controller.completeCurrentPhaseForTesting();
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.phase, TimerPhase.longInterval);
+      controller.completeCurrentPhaseForTesting();
+
+      expect(controller.phase, TimerPhase.idle);
+      expect(controller.logs, hasLength(8));
+      expect(controller.logs.where((log) => log.note == '组内休息'), hasLength(2));
+      expect(controller.logs.where((log) => log.note == '长休息'), hasLength(2));
       controller.dispose();
     },
   );
@@ -140,14 +200,18 @@ void main() {
     await controller.load();
     controller
       ..setCycleCount(4)
+      ..setGroupCount(3)
       ..setIntervalMinutes(8)
+      ..setLongIntervalMinutes(20)
       ..setRecordIntervals(true);
     await Future<void>.delayed(Duration.zero);
 
     final restored = AppController(storage);
     await restored.load();
     expect(restored.cycleCount, 4);
+    expect(restored.groupCount, 3);
     expect(restored.intervalMinutes, 8);
+    expect(restored.longIntervalMinutes, 20);
     expect(restored.recordIntervals, isTrue);
     controller.dispose();
     restored.dispose();
@@ -514,11 +578,14 @@ void main() {
       expect(arguments['category'], '工作');
       expect(arguments['remainingSeconds'], 25 * 60);
       expect(arguments['totalSeconds'], 25 * 60);
-      expect(arguments['isInterval'], isFalse);
+      expect(arguments['phase'], 'running');
       expect(arguments['currentCycle'], 1);
-      expect(arguments['cycleCount'], 1);
+      expect(arguments['cycleCount'], 4);
+      expect(arguments['currentGroup'], 1);
+      expect(arguments['groupCount'], 1);
       expect(arguments['focusSeconds'], 25 * 60);
       expect(arguments['intervalSeconds'], 5 * 60);
+      expect(arguments['longIntervalSeconds'], 15 * 60);
       expect(arguments, isNot(contains('isRunning')));
       expect(arguments['icon'], isNotNull);
 
@@ -527,4 +594,40 @@ void main() {
       controller.dispose();
     },
   );
+
+  test('requests overlay permission and shows the floating timer', () async {
+    const channel = MethodChannel('tomatolog/platform');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'floatingTimerPermissionGranted') return true;
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final controller = AppController(MemoryAppStorage(), AppPlatformService());
+    await controller.load();
+
+    await controller.setFloatingTimerEnabled(true);
+    controller.startTimer();
+    await pumpEventQueue(times: 20);
+
+    expect(controller.floatingTimerEnabled, isTrue);
+    expect(
+      calls.where((call) => call.method == 'showFloatingTimer'),
+      hasLength(1),
+    );
+    final arguments =
+        (calls.lastWhere((call) => call.method == 'showFloatingTimer').arguments
+                as Map)
+            .cast<String, Object?>();
+    expect(arguments['category'], '工作');
+    expect(arguments['remainingSeconds'], 25 * 60);
+    expect(arguments['icon'], isNotNull);
+    controller.stopTimer(saveInterrupted: false);
+    controller.dispose();
+  });
 }

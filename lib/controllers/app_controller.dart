@@ -12,7 +12,7 @@ import '../services/app_platform_service.dart';
 import '../services/app_storage.dart';
 import '../services/webdav_sync_manager.dart';
 
-enum TimerPhase { idle, running, interval }
+enum TimerPhase { idle, running, interval, longInterval }
 
 enum AppThemePreference { system, light, dark }
 
@@ -28,6 +28,7 @@ class AppController extends ChangeNotifier {
   static const maxMinutes = 1440;
   static const timerDialMinutes = 60;
   static const maxCycleCount = 10;
+  static const maxGroupCount = 10;
   static const maxIntervalMinutes = 60;
   static const defaultAccentColorValue = 0xFFE05446;
 
@@ -51,15 +52,19 @@ class AppController extends ChangeNotifier {
   String? _selectedCategoryId;
   int _plannedMinutes = 25;
   int _remainingSeconds = 25 * 60;
-  int _cycleCount = 1;
+  int _cycleCount = 4;
+  int _groupCount = 1;
   int _intervalMinutes = 5;
+  int _longIntervalMinutes = 15;
   bool _recordIntervals = false;
   int _currentCycle = 1;
+  int _currentGroup = 1;
   DateTime? _sessionStartedAt;
   DateTime? _targetEndAt;
   AppThemePreference _themePreference = AppThemePreference.system;
   int _accentColorValue = defaultAccentColorValue;
   String? _backgroundImagePath;
+  bool _floatingTimerEnabled = false;
 
   TimerPhase get phase => _phase;
 
@@ -71,17 +76,28 @@ class AppController extends ChangeNotifier {
 
   int get cycleCount => _cycleCount;
 
+  int get groupCount => _groupCount;
+
   int get intervalMinutes => _intervalMinutes;
+
+  int get longIntervalMinutes => _longIntervalMinutes;
 
   bool get recordIntervals => _recordIntervals;
 
   int get currentCycle => _currentCycle;
+
+  int get currentGroup => _currentGroup;
+
+  bool get isBreak =>
+      phase == TimerPhase.interval || phase == TimerPhase.longInterval;
 
   AppThemePreference get themePreference => _themePreference;
 
   int get accentColorValue => _accentColorValue;
 
   String? get backgroundImagePath => _backgroundImagePath;
+
+  bool get floatingTimerEnabled => _floatingTimerEnabled;
 
   List<FocusCategory> get categories => _categoriesView;
 
@@ -98,7 +114,12 @@ class AppController extends ChangeNotifier {
   FocusCategory? get selectedCategory => categoryById(selectedCategoryId ?? '');
 
   int get currentPhaseSeconds =>
-      (phase == TimerPhase.interval ? intervalMinutes : plannedMinutes) * 60;
+      switch (phase) {
+        TimerPhase.interval => intervalMinutes,
+        TimerPhase.longInterval => longIntervalMinutes,
+        _ => plannedMinutes,
+      } *
+      60;
 
   int get elapsedSeconds => currentPhaseSeconds - remainingSeconds;
 
@@ -158,8 +179,13 @@ class AppController extends ChangeNotifier {
       _accentColorValue =
           data['accentColorValue'] as int? ?? defaultAccentColorValue;
       _backgroundImagePath = data['backgroundImagePath'] as String?;
+      _floatingTimerEnabled = data['floatingTimerEnabled'] == true;
       _cycleCount = _validCycleCount(data['cycleCount']);
+      _groupCount = _validGroupCount(data['groupCount']);
       _intervalMinutes = _validIntervalMinutes(data['intervalMinutes']);
+      _longIntervalMinutes = _validLongIntervalMinutes(
+        data['longIntervalMinutes'],
+      );
       _recordIntervals = data['recordIntervals'] == true;
       _ensureSelectedCategory();
       _restoreTimer(timerData);
@@ -259,6 +285,18 @@ class AppController extends ChangeNotifier {
     _schedulePersist();
   }
 
+  void setGroupCount(int count) {
+    if (phase != TimerPhase.idle ||
+        count <= 0 ||
+        count > maxGroupCount ||
+        groupCount == count) {
+      return;
+    }
+    _groupCount = count;
+    notifyListeners();
+    _schedulePersist();
+  }
+
   void setIntervalMinutes(int minutes) {
     if (phase != TimerPhase.idle ||
         minutes <= 0 ||
@@ -267,6 +305,18 @@ class AppController extends ChangeNotifier {
       return;
     }
     _intervalMinutes = minutes;
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  void setLongIntervalMinutes(int minutes) {
+    if (phase != TimerPhase.idle ||
+        minutes <= 0 ||
+        minutes > maxIntervalMinutes ||
+        longIntervalMinutes == minutes) {
+      return;
+    }
+    _longIntervalMinutes = minutes;
     notifyListeners();
     _schedulePersist();
   }
@@ -281,6 +331,7 @@ class AppController extends ChangeNotifier {
   void startTimer() {
     if (phase != TimerPhase.idle || selectedCategory == null) return;
     _currentCycle = 1;
+    _currentGroup = 1;
     _beginTimerPhase(TimerPhase.running, DateTime.now());
     notifyListeners();
     _schedulePersist();
@@ -306,8 +357,8 @@ class AppController extends ChangeNotifier {
           plannedSeconds: currentPhaseSeconds,
           actualSeconds: actual,
           status: LogStatus.interrupted,
-          kind: phase == TimerPhase.interval ? LogKind.interval : LogKind.focus,
-          note: phase == TimerPhase.interval ? '循环间隔' : null,
+          kind: isBreak ? LogKind.interval : LogKind.focus,
+          note: _breakLogNote(phase),
         ),
       );
       _syncPlanCompletions(now);
@@ -607,6 +658,22 @@ class AppController extends ChangeNotifier {
     await _platform?.requestBatteryOptimizationExemption();
   }
 
+  Future<void> setFloatingTimerEnabled(bool enabled) async {
+    if (floatingTimerEnabled == enabled) return;
+    _floatingTimerEnabled = enabled;
+    notifyListeners();
+    _schedulePersist();
+    if (!enabled) {
+      await _platform?.hideFloatingTimer();
+      return;
+    }
+    if (!await (_platform?.floatingTimerPermissionGranted() ??
+        Future.value(false))) {
+      await _platform?.requestFloatingTimerPermission();
+    }
+    _showFloatingTimer();
+  }
+
   void _startTicker() {
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -656,19 +723,30 @@ class AppController extends ChangeNotifier {
           plannedSeconds: currentPhaseSeconds,
           actualSeconds: currentPhaseSeconds,
           status: LogStatus.completed,
-          kind: completedPhase == TimerPhase.interval
-              ? LogKind.interval
-              : LogKind.focus,
-          note: completedPhase == TimerPhase.interval ? '循环间隔' : null,
+          kind: completedPhase == TimerPhase.running
+              ? LogKind.focus
+              : LogKind.interval,
+          note: _breakLogNote(completedPhase),
         ),
       );
       _syncPlanCompletions(endedAt);
     }
     if (completedPhase == TimerPhase.running && currentCycle < cycleCount) {
       _setTimerPhase(TimerPhase.interval, endedAt);
+    } else if (completedPhase == TimerPhase.running) {
+      _setTimerPhase(TimerPhase.longInterval, endedAt);
     } else if (completedPhase == TimerPhase.interval) {
       _currentCycle++;
       _setTimerPhase(TimerPhase.running, endedAt);
+    } else if (completedPhase == TimerPhase.longInterval) {
+      if (currentGroup < groupCount) {
+        _currentGroup++;
+        _currentCycle = 1;
+        _setTimerPhase(TimerPhase.running, endedAt);
+      } else {
+        _resetTimer();
+        return true;
+      }
     } else {
       _resetTimer();
       return true;
@@ -700,6 +778,7 @@ class AppController extends ChangeNotifier {
     _sessionStartedAt = null;
     _targetEndAt = null;
     _currentCycle = 1;
+    _currentGroup = 1;
   }
 
   void _restoreTimer(Map<String, Object?>? timerData) {
@@ -709,6 +788,9 @@ class AppController extends ChangeNotifier {
     _phase = _parseTimerPhase(timerData['phase']);
     _currentCycle = (timerData['currentCycle'] as int? ?? 1)
         .clamp(1, cycleCount)
+        .toInt();
+    _currentGroup = (timerData['currentGroup'] as int? ?? 1)
+        .clamp(1, groupCount)
         .toInt();
     final savedRemaining = timerData['remainingSeconds'] as int?;
     final maximumSeconds = currentPhaseSeconds;
@@ -870,8 +952,11 @@ class AppController extends ChangeNotifier {
     'themePreference': themePreference.name,
     'accentColorValue': accentColorValue,
     'backgroundImagePath': backgroundImagePath,
+    'floatingTimerEnabled': floatingTimerEnabled,
     'cycleCount': cycleCount,
+    'groupCount': groupCount,
     'intervalMinutes': intervalMinutes,
+    'longIntervalMinutes': longIntervalMinutes,
     'recordIntervals': recordIntervals,
     'timer': {
       'phase': phase.name,
@@ -879,6 +964,7 @@ class AppController extends ChangeNotifier {
       'sessionStartedAt': _sessionStartedAt?.toIso8601String(),
       'targetEndAt': _targetEndAt?.toIso8601String(),
       'currentCycle': currentCycle,
+      'currentGroup': currentGroup,
     },
   };
 
@@ -893,6 +979,7 @@ class AppController extends ChangeNotifier {
       'sessionStartedAt': null,
       'targetEndAt': null,
       'currentCycle': 1,
+      'currentGroup': 1,
     };
     final backgroundPath = _backgroundImagePath;
     data.remove('backgroundImagePath');
@@ -933,6 +1020,7 @@ class AppController extends ChangeNotifier {
       'sessionStartedAt': null,
       'targetEndAt': null,
       'currentCycle': 1,
+      'currentGroup': 1,
     };
     _ticker?.cancel();
     await _platform?.cancelTimer();
@@ -986,16 +1074,20 @@ class AppController extends ChangeNotifier {
     _phase = TimerPhase.idle;
     _plannedMinutes = 25;
     _remainingSeconds = plannedMinutes * 60;
-    _cycleCount = 1;
+    _cycleCount = 4;
+    _groupCount = 1;
     _intervalMinutes = 5;
+    _longIntervalMinutes = 15;
     _recordIntervals = false;
     _currentCycle = 1;
+    _currentGroup = 1;
     _selectedCategoryId = _categories.first.id;
     _sessionStartedAt = null;
     _targetEndAt = null;
     _themePreference = AppThemePreference.system;
     _accentColorValue = defaultAccentColorValue;
     _backgroundImagePath = null;
+    _floatingTimerEnabled = false;
   }
 
   static int _validPlannedMinutes(Object? value) {
@@ -1003,19 +1095,36 @@ class AppController extends ChangeNotifier {
   }
 
   static int _validCycleCount(Object? value) {
-    return value is int && value > 0 && value <= maxCycleCount ? value : 1;
+    return value is int && value > 0 && value <= maxCycleCount ? value : 4;
+  }
+
+  static int _validGroupCount(Object? value) {
+    return value is int && value > 0 && value <= maxGroupCount ? value : 1;
   }
 
   static int _validIntervalMinutes(Object? value) {
     return value is int && value > 0 && value <= maxIntervalMinutes ? value : 5;
   }
 
+  static int _validLongIntervalMinutes(Object? value) {
+    return value is int && value > 0 && value <= maxIntervalMinutes
+        ? value
+        : 15;
+  }
+
   static TimerPhase _parseTimerPhase(Object? value) {
+    if (value == TimerPhase.longInterval.name) return TimerPhase.longInterval;
     if (value == TimerPhase.interval.name) return TimerPhase.interval;
     return value == 'running' || value == 'paused'
         ? TimerPhase.running
         : TimerPhase.idle;
   }
+
+  static String? _breakLogNote(TimerPhase phase) => switch (phase) {
+    TimerPhase.interval => '组内休息',
+    TimerPhase.longInterval => '长休息',
+    _ => null,
+  };
 
   static AppThemePreference _parseThemePreference(Object? value) {
     for (final preference in AppThemePreference.values) {
@@ -1034,11 +1143,34 @@ class AppController extends ChangeNotifier {
         colorValue: category.colorValue,
         remainingSeconds: remainingSeconds,
         totalSeconds: currentPhaseSeconds,
-        isInterval: phase == TimerPhase.interval,
+        phase: phase.name,
         currentCycle: currentCycle,
         cycleCount: cycleCount,
+        currentGroup: currentGroup,
+        groupCount: groupCount,
         focusSeconds: plannedMinutes * 60,
         intervalSeconds: intervalMinutes * 60,
+        longIntervalSeconds: longIntervalMinutes * 60,
+      ),
+    );
+    _showFloatingTimer();
+  }
+
+  void _showFloatingTimer() {
+    final category = selectedCategory;
+    if (!floatingTimerEnabled || category == null || phase == TimerPhase.idle) {
+      return;
+    }
+    unawaited(
+      _platform?.showFloatingTimer(
+        categoryName: switch (phase) {
+          TimerPhase.interval => '休息',
+          TimerPhase.longInterval => '长休息',
+          _ => categoryPath(category),
+        },
+        iconKey: category.iconKey,
+        colorValue: category.colorValue,
+        remainingSeconds: remainingSeconds,
       ),
     );
   }

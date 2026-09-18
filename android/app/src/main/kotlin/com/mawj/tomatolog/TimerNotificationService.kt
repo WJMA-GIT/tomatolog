@@ -160,7 +160,7 @@ class TimerNotificationService : Service() {
         setTimerIcons(builder, timer)
         builder
             .setContentTitle("专注完成")
-            .setContentText("${timer.category} · ${formatTime(timer.totalSeconds)}")
+            .setContentText("${timer.category} · 全部循环已完成")
             .setContentIntent(contentIntent)
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_ALARM)
@@ -171,6 +171,7 @@ class TimerNotificationService : Service() {
                 .setVibrate(completionVibrationPattern)
         }
         notificationManager().notify(completionNotificationId, builder.build())
+        FloatingTimerService.hide(this)
         stopSelf()
     }
 
@@ -219,9 +220,6 @@ class TimerNotificationService : Service() {
         wakeLock = null
     }
 
-    private fun formatTime(seconds: Int) =
-        "%02d:%02d".format(seconds / 60, seconds % 60)
-
     companion object {
         private const val timerNotificationId = 25
         private const val completionNotificationId = 26
@@ -238,10 +236,14 @@ class TimerNotificationService : Service() {
         private const val extraIcon = "icon"
         private const val extraDeadline = "deadline"
         private const val extraIsInterval = "isInterval"
+        private const val extraPhase = "phase"
         private const val extraCurrentCycle = "currentCycle"
         private const val extraCycleCount = "cycleCount"
+        private const val extraCurrentGroup = "currentGroup"
+        private const val extraGroupCount = "groupCount"
         private const val extraFocusSeconds = "focusSeconds"
         private const val extraIntervalSeconds = "intervalSeconds"
+        private const val extraLongIntervalSeconds = "longIntervalSeconds"
         private const val completionAlarmRequest = 27
         private val completionVibrationPattern = longArrayOf(0, 300, 180, 500)
 
@@ -306,6 +308,13 @@ class TimerNotificationService : Service() {
 
         fun show(context: Context, timer: TimerNotification) {
             val deadline = System.currentTimeMillis() + timer.remainingSeconds * 1000L
+            FloatingTimerService.updateIfVisible(
+                context,
+                timer.displayCategory,
+                timer.remainingSeconds,
+                timer.color,
+                timer.icon,
+            )
             val intent =
                 Intent(context, TimerNotificationService::class.java).apply {
                     action = actionShow
@@ -315,11 +324,15 @@ class TimerNotificationService : Service() {
                     putExtra(extraColor, timer.color)
                     putExtra(extraIcon, timer.icon)
                     putExtra(extraDeadline, deadline)
-                    putExtra(extraIsInterval, timer.isInterval)
+                    putExtra(extraPhase, timer.phase)
+                    putExtra(extraIsInterval, timer.phase != "running")
                     putExtra(extraCurrentCycle, timer.currentCycle)
                     putExtra(extraCycleCount, timer.cycleCount)
+                    putExtra(extraCurrentGroup, timer.currentGroup)
+                    putExtra(extraGroupCount, timer.groupCount)
                     putExtra(extraFocusSeconds, timer.focusSeconds)
                     putExtra(extraIntervalSeconds, timer.intervalSeconds)
+                    putExtra(extraLongIntervalSeconds, timer.longIntervalSeconds)
                 }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -330,6 +343,7 @@ class TimerNotificationService : Service() {
 
         fun cancel(context: Context) {
             cancelScheduledCompletion(context)
+            FloatingTimerService.hide(context)
             context.stopService(Intent(context, TimerNotificationService::class.java))
             (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .cancel(timerNotificationId)
@@ -377,10 +391,7 @@ class TimerNotificationService : Service() {
             builder
                 .setContentTitle("专注完成")
                 .setContentText(
-                    "${timer.category} · %02d:%02d".format(
-                        timer.totalSeconds / 60,
-                        timer.totalSeconds % 60,
-                    ),
+                    "${timer.category} · 全部循环已完成",
                 ).setContentIntent(contentIntent)
                 .setAutoCancel(true)
                 .setCategory(Notification.CATEGORY_ALARM)
@@ -391,6 +402,7 @@ class TimerNotificationService : Service() {
                     .setVibrate(completionVibrationPattern)
             }
             manager.notify(completionNotificationId, builder.build())
+            FloatingTimerService.hide(context)
             manager.cancel(timerNotificationId)
             cancelScheduledCompletion(context)
             context.stopService(Intent(context, TimerNotificationService::class.java))
@@ -441,11 +453,15 @@ class TimerNotificationService : Service() {
             putExtra(extraTotal, timer.totalSeconds)
             putExtra(extraColor, timer.color)
             putExtra(extraIcon, timer.icon)
-            putExtra(extraIsInterval, timer.isInterval)
+            putExtra(extraPhase, timer.phase)
+            putExtra(extraIsInterval, timer.phase != "running")
             putExtra(extraCurrentCycle, timer.currentCycle)
             putExtra(extraCycleCount, timer.cycleCount)
+            putExtra(extraCurrentGroup, timer.currentGroup)
+            putExtra(extraGroupCount, timer.groupCount)
             putExtra(extraFocusSeconds, timer.focusSeconds)
             putExtra(extraIntervalSeconds, timer.intervalSeconds)
+            putExtra(extraLongIntervalSeconds, timer.longIntervalSeconds)
         }
 
         private fun Intent.timerNotification(): TimerNotification? {
@@ -456,11 +472,15 @@ class TimerNotificationService : Service() {
                 totalSeconds = getIntExtra(extraTotal, 1),
                 color = getIntExtra(extraColor, 0),
                 icon = getByteArrayExtra(extraIcon),
-                isInterval = getBooleanExtra(extraIsInterval, false),
+                phase = getStringExtra(extraPhase)
+                    ?: if (getBooleanExtra(extraIsInterval, false)) "interval" else "running",
                 currentCycle = getIntExtra(extraCurrentCycle, 1),
                 cycleCount = getIntExtra(extraCycleCount, 1),
+                currentGroup = getIntExtra(extraCurrentGroup, 1),
+                groupCount = getIntExtra(extraGroupCount, 1),
                 focusSeconds = getIntExtra(extraFocusSeconds, 1),
                 intervalSeconds = getIntExtra(extraIntervalSeconds, 1),
+                longIntervalSeconds = getIntExtra(extraLongIntervalSeconds, 1),
             )
         }
     }
@@ -478,31 +498,55 @@ data class TimerNotification(
     val totalSeconds: Int,
     val color: Int,
     val icon: ByteArray?,
-    val isInterval: Boolean,
+    val phase: String,
     val currentCycle: Int,
     val cycleCount: Int,
+    val currentGroup: Int,
+    val groupCount: Int,
     val focusSeconds: Int,
     val intervalSeconds: Int,
+    val longIntervalSeconds: Int,
 ) {
     val displayCategory: String
-        get() = if (isInterval) "间隔休息" else category
+        get() =
+            when (phase) {
+                "interval" -> "休息"
+                "longInterval" -> "长休息"
+                else -> category
+            }
 
     fun nextStage(): TimerNotification? =
-        if (isInterval) {
+        if (phase == "interval") {
             copy(
                 remainingSeconds = focusSeconds,
                 totalSeconds = focusSeconds,
-                isInterval = false,
+                phase = "running",
                 currentCycle = currentCycle + 1,
             )
+        } else if (phase == "longInterval") {
+            if (currentGroup < groupCount) {
+                copy(
+                    remainingSeconds = focusSeconds,
+                    totalSeconds = focusSeconds,
+                    phase = "running",
+                    currentCycle = 1,
+                    currentGroup = currentGroup + 1,
+                )
+            } else {
+                null
+            }
         } else if (currentCycle < cycleCount) {
             copy(
                 remainingSeconds = intervalSeconds,
                 totalSeconds = intervalSeconds,
-                isInterval = true,
+                phase = "interval",
             )
         } else {
-            null
+            copy(
+                remainingSeconds = longIntervalSeconds,
+                totalSeconds = longIntervalSeconds,
+                phase = "longInterval",
+            )
         }
 }
 

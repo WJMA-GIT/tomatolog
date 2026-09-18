@@ -73,9 +73,13 @@ class TimerScreen extends StatelessWidget {
                             switch (controller.phase) {
                               TimerPhase.idle => '准备开始',
                               TimerPhase.running =>
-                                '第 ${controller.currentCycle}/${controller.cycleCount} 轮 · 专注中',
+                                '第 ${controller.currentGroup}/${controller.groupCount} 组 · '
+                                    '第 ${controller.currentCycle}/${controller.cycleCount} 轮 · 专注中',
                               TimerPhase.interval =>
-                                '第 ${controller.currentCycle}/${controller.cycleCount} 轮完成 · 间隔中',
+                                '第 ${controller.currentGroup} 组 · '
+                                    '第 ${controller.currentCycle} 轮完成 · 休息中',
+                              TimerPhase.longInterval =>
+                                '第 ${controller.currentGroup}/${controller.groupCount} 组完成 · 长休息',
                             },
                             style: theme.textTheme.titleMedium?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
@@ -106,6 +110,16 @@ class TimerScreen extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             _CycleSettings(controller: controller),
+            const SizedBox(height: 12),
+            Card(
+              child: SwitchListTile(
+                title: const Text('悬浮倒计时'),
+                subtitle: const Text('在其他应用上层显示分类图标和倒计时，首次开启需要授权'),
+                secondary: const Icon(Icons.picture_in_picture_alt_rounded),
+                value: controller.floatingTimerEnabled,
+                onChanged: controller.setFloatingTimerEnabled,
+              ),
+            ),
             const SizedBox(height: 22),
           ],
           SizedBox(
@@ -116,12 +130,17 @@ class TimerScreen extends StatelessWidget {
                   ? null
                   : switch (controller.phase) {
                       TimerPhase.idle => controller.startTimer,
-                      TimerPhase.running || TimerPhase.interval =>
-                        () => showTimerEndDialog(context, controller),
+                      TimerPhase.running ||
+                      TimerPhase.interval ||
+                      TimerPhase.longInterval => () => showTimerEndDialog(
+                        context,
+                        controller,
+                      ),
                     },
               icon: Icon(
                 controller.phase == TimerPhase.running ||
-                        controller.phase == TimerPhase.interval
+                        controller.phase == TimerPhase.interval ||
+                        controller.phase == TimerPhase.longInterval
                     ? Icons.stop_circle_outlined
                     : Icons.play_arrow_rounded,
               ),
@@ -129,6 +148,7 @@ class TimerScreen extends StatelessWidget {
                 TimerPhase.idle => '开始专注',
                 TimerPhase.running => '结束',
                 TimerPhase.interval => '结束',
+                TimerPhase.longInterval => '结束',
               }),
             ),
           ),
@@ -157,7 +177,7 @@ class _CycleSettings extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = controller.cycleCount > 1;
+    final shortBreakEnabled = controller.cycleCount > 1;
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
@@ -165,6 +185,17 @@ class _CycleSettings extends StatelessWidget {
           children: [
             _CounterRow(
               label: '循环次数',
+              value: controller.groupCount,
+              suffix: '组',
+              onDecrease: controller.groupCount > 1
+                  ? () => controller.setGroupCount(controller.groupCount - 1)
+                  : null,
+              onIncrease: controller.groupCount < AppController.maxGroupCount
+                  ? () => controller.setGroupCount(controller.groupCount + 1)
+                  : null,
+            ),
+            _CounterRow(
+              label: '组内轮次',
               value: controller.cycleCount,
               suffix: '轮',
               onDecrease: controller.cycleCount > 1
@@ -175,17 +206,17 @@ class _CycleSettings extends StatelessWidget {
                   : null,
             ),
             _CounterRow(
-              label: '循环间隔',
+              label: '休息时间',
               value: controller.intervalMinutes,
               suffix: '分钟',
-              enabled: enabled,
-              onDecrease: enabled && controller.intervalMinutes > 1
+              enabled: shortBreakEnabled,
+              onDecrease: shortBreakEnabled && controller.intervalMinutes > 1
                   ? () => controller.setIntervalMinutes(
                       controller.intervalMinutes - 1,
                     )
                   : null,
               onIncrease:
-                  enabled &&
+                  shortBreakEnabled &&
                       controller.intervalMinutes <
                           AppController.maxIntervalMinutes
                   ? () => controller.setIntervalMinutes(
@@ -193,12 +224,29 @@ class _CycleSettings extends StatelessWidget {
                     )
                   : null,
             ),
+            _CounterRow(
+              label: '长休息时间',
+              value: controller.longIntervalMinutes,
+              suffix: '分钟',
+              onDecrease: controller.longIntervalMinutes > 1
+                  ? () => controller.setLongIntervalMinutes(
+                      controller.longIntervalMinutes - 1,
+                    )
+                  : null,
+              onIncrease:
+                  controller.longIntervalMinutes <
+                      AppController.maxIntervalMinutes
+                  ? () => controller.setLongIntervalMinutes(
+                      controller.longIntervalMinutes + 1,
+                    )
+                  : null,
+            ),
             SwitchListTile(
               contentPadding: const EdgeInsets.only(left: 0),
               title: const Text('间隔计入统计'),
-              subtitle: Text(enabled ? '间隔时间会归入当前分类' : '循环次数大于 1 时可用'),
-              value: enabled && controller.recordIntervals,
-              onChanged: enabled ? controller.setRecordIntervals : null,
+              subtitle: const Text('休息和长休息会归入当前分类'),
+              value: controller.recordIntervals,
+              onChanged: controller.setRecordIntervals,
             ),
           ],
         ),

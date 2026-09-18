@@ -46,6 +46,32 @@ class AppPlatformService {
   Future<void> requestBatteryOptimizationExemption() =>
       _invoke<void>('requestBatteryOptimizationExemption');
 
+  Future<bool> floatingTimerPermissionGranted() async =>
+      await _invoke<bool>('floatingTimerPermissionGranted') ?? false;
+
+  Future<void> requestFloatingTimerPermission() =>
+      _invoke<void>('requestFloatingTimerPermission');
+
+  Future<void> showFloatingTimer({
+    required String categoryName,
+    required String iconKey,
+    required int colorValue,
+    required int remainingSeconds,
+  }) async {
+    final arguments = <String, Object?>{
+      'category': categoryName,
+      'color': colorValue,
+      'remainingSeconds': remainingSeconds,
+    };
+    final icon = await _notificationIcon(iconKey);
+    await _invoke<void>(
+      'showFloatingTimer',
+      icon == null ? arguments : {...arguments, 'icon': icon},
+    );
+  }
+
+  Future<void> hideFloatingTimer() => _invoke<void>('hideFloatingTimer');
+
   Future<String?> pickBackgroundImage() =>
       _invoke<String>('pickBackgroundImage');
 
@@ -73,22 +99,28 @@ class AppPlatformService {
     required int colorValue,
     required int remainingSeconds,
     required int totalSeconds,
-    required bool isInterval,
+    required String phase,
     required int currentCycle,
     required int cycleCount,
+    required int currentGroup,
+    required int groupCount,
     required int focusSeconds,
     required int intervalSeconds,
+    required int longIntervalSeconds,
   }) async {
     final arguments = <String, Object?>{
       'category': categoryName,
       'remainingSeconds': remainingSeconds,
       'totalSeconds': totalSeconds,
       'color': colorValue,
-      'isInterval': isInterval,
+      'phase': phase,
       'currentCycle': currentCycle,
       'cycleCount': cycleCount,
+      'currentGroup': currentGroup,
+      'groupCount': groupCount,
       'focusSeconds': focusSeconds,
       'intervalSeconds': intervalSeconds,
+      'longIntervalSeconds': longIntervalSeconds,
     };
     final icon = await _notificationIcon(iconKey);
     await _invoke<void>(

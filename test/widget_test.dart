@@ -394,12 +394,18 @@ void main() {
     await tester.ensureVisible(find.byTooltip('增加循环次数'));
     await tester.tap(find.byTooltip('增加循环次数'));
     await tester.pump();
-    expect(controller.cycleCount, 2);
+    expect(controller.groupCount, 2);
+    expect(find.text('长休息时间'), findsOneWidget);
 
     await tester.ensureVisible(find.text('间隔计入统计'));
     await tester.tap(find.text('间隔计入统计'));
     await tester.pump();
     expect(controller.recordIntervals, isTrue);
+
+    await tester.ensureVisible(find.text('悬浮倒计时'));
+    await tester.tap(find.text('悬浮倒计时'));
+    await tester.pump();
+    expect(controller.floatingTimerEnabled, isTrue);
     controller.dispose();
   });
 }
