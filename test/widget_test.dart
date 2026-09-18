@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,22 @@ import 'package:tomatolog/services/app_platform_service.dart';
 import 'package:tomatolog/services/app_storage.dart';
 
 void main() {
+  testWidgets('hides Android-only setup and floating timer on iOS', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final controller = AppController(MemoryAppStorage(), AppPlatformService());
+    await controller.load();
+
+    await tester.pumpWidget(TomatoLogApp(controller: controller));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('notification-permission-guide')), findsNothing);
+    expect(find.text('悬浮倒计时'), findsNothing);
+    controller.dispose();
+  });
+
   testWidgets('shows the timer and navigates to categories', (tester) async {
     const channel = MethodChannel('tomatolog/platform');
     final calls = <MethodCall>[];

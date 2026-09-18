@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../controllers/app_controller.dart';
@@ -111,15 +112,16 @@ class TimerScreen extends StatelessWidget {
             const SizedBox(height: 18),
             _CycleSettings(controller: controller),
             const SizedBox(height: 12),
-            Card(
-              child: SwitchListTile(
-                title: const Text('悬浮倒计时'),
-                subtitle: const Text('在其他应用上层显示分类图标和倒计时，首次开启需要授权'),
-                secondary: const Icon(Icons.picture_in_picture_alt_rounded),
-                value: controller.floatingTimerEnabled,
-                onChanged: controller.setFloatingTimerEnabled,
+            if (defaultTargetPlatform == TargetPlatform.android)
+              Card(
+                child: SwitchListTile(
+                  title: const Text('悬浮倒计时'),
+                  subtitle: const Text('在其他应用上层显示分类图标和倒计时，首次开启需要授权'),
+                  secondary: const Icon(Icons.picture_in_picture_alt_rounded),
+                  value: controller.floatingTimerEnabled,
+                  onChanged: controller.setFloatingTimerEnabled,
+                ),
               ),
-            ),
             const SizedBox(height: 22),
           ],
           SizedBox(

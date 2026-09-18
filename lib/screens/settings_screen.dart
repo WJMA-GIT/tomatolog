@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../controllers/app_controller.dart';
@@ -163,37 +164,39 @@ class _SettingsScreenState extends State<SettingsScreen>
               ],
             ],
           ),
-          const SizedBox(height: 28),
-          Text('通知', style: theme.textTheme.titleLarge),
-          const SizedBox(height: 10),
-          Card(
-            color: theme.colorScheme.surfaceContainerLowest,
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.notifications_active_outlined),
-                  title: const Text('通知权限'),
-                  subtitle: const Text('前往通知开启实况通知以及横幅、声音和震动'),
-                  trailing: const Icon(Icons.open_in_new_rounded),
-                  onTap: widget.controller.openCompletionNotificationSettings,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.battery_saver_outlined),
-                  title: const Text('忽略电池优化'),
-                  subtitle: Text(
-                    batteryUnrestricted ? '系统已允许计时器忽略电池优化' : '减少锁屏后被系统中断的可能',
+          if (defaultTargetPlatform == TargetPlatform.android) ...[
+            const SizedBox(height: 28),
+            Text('通知', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 10),
+            Card(
+              color: theme.colorScheme.surfaceContainerLowest,
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.notifications_active_outlined),
+                    title: const Text('通知权限'),
+                    subtitle: const Text('前往通知开启实况通知以及横幅、声音和震动'),
+                    trailing: const Icon(Icons.open_in_new_rounded),
+                    onTap: widget.controller.openCompletionNotificationSettings,
                   ),
-                  trailing: Text(batteryUnrestricted ? '已忽略' : '去设置'),
-                  onTap: () async {
-                    await widget.controller
-                        .requestBatteryOptimizationExemption();
-                    await _refreshNotificationStatus();
-                  },
-                ),
-              ],
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.battery_saver_outlined),
+                    title: const Text('忽略电池优化'),
+                    subtitle: Text(
+                      batteryUnrestricted ? '系统已允许计时器忽略电池优化' : '减少锁屏后被系统中断的可能',
+                    ),
+                    trailing: Text(batteryUnrestricted ? '已忽略' : '去设置'),
+                    onTap: () async {
+                      await widget.controller
+                          .requestBatteryOptimizationExemption();
+                      await _refreshNotificationStatus();
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
           if (widget.controller.webDav case final webDav?) ...[
             const SizedBox(height: 28),
             AnimatedBuilder(

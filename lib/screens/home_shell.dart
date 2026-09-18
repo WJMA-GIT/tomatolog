@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../controllers/app_controller.dart';
@@ -57,6 +58,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Future<void> _refreshNotificationStatus({
     bool requestOnFirstOpen = false,
   }) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
     final status = await widget.controller.notificationStatus();
     if (!mounted) return;
     final granted = status['granted'] == true;
