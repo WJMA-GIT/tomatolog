@@ -434,4 +434,71 @@ void main() {
     expect(controller.floatingTimerEnabled, isTrue);
     controller.dispose();
   });
+
+  testWidgets('keeps break controls disabled when their count is one', (
+    tester,
+  ) async {
+    final controller = AppController(MemoryAppStorage());
+    await controller.load();
+    controller.setCycleCount(1);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ListenableBuilder(
+          listenable: controller,
+          builder: (_, _) =>
+              Scaffold(body: TimerScreen(controller: controller)),
+        ),
+      ),
+    );
+
+    expect(controller.intervalMinutes, 0);
+    expect(controller.longIntervalMinutes, 0);
+    Finder buttonForTooltip(String tooltip) => find.ancestor(
+      of: find.byTooltip(tooltip),
+      matching: find.byType(IconButton),
+    );
+    expect(
+      tester.widget<IconButton>(buttonForTooltip('增加休息时间')).onPressed,
+      isNull,
+    );
+    expect(
+      tester.widget<IconButton>(buttonForTooltip('增加长休息时间')).onPressed,
+      isNull,
+    );
+    controller.dispose();
+  });
+
+  testWidgets('starts and ends the timer from the button inside the dial', (
+    tester,
+  ) async {
+    final controller = AppController(MemoryAppStorage());
+    await controller.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ListenableBuilder(
+          listenable: controller,
+          builder: (_, _) =>
+              Scaffold(body: TimerScreen(controller: controller)),
+        ),
+      ),
+    );
+
+    final dial = tester.getRect(find.byType(CircularProgressIndicator));
+    final buttonFinder = find.byKey(const Key('timer-primary-button'));
+    expect(dial.contains(tester.getCenter(buttonFinder)), isTrue);
+    expect(find.text('开始专注'), findsOneWidget);
+
+    await tester.tap(buttonFinder);
+    await tester.pump();
+    expect(controller.phase, TimerPhase.running);
+    expect(find.text('结束'), findsOneWidget);
+
+    await tester.tap(buttonFinder);
+    await tester.pumpAndSettle();
+    expect(find.text('结束这次专注？'), findsOneWidget);
+    await tester.tap(find.text('丢弃记录'));
+    await tester.pumpAndSettle();
+    expect(controller.phase, TimerPhase.idle);
+    controller.dispose();
+  });
 }

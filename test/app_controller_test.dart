@@ -55,7 +55,7 @@ void main() {
     expect(controller.plannedMinutes, 25);
     expect(controller.intervalMinutes, 5);
     expect(controller.cycleCount, 4);
-    expect(controller.longIntervalMinutes, 15);
+    expect(controller.longIntervalMinutes, 0);
     expect(controller.groupCount, 1);
     controller.dispose();
   });
@@ -83,8 +83,6 @@ void main() {
       expect(controller.logs, hasLength(1));
 
       controller.completeCurrentPhaseForTesting();
-      expect(controller.phase, TimerPhase.longInterval);
-      controller.completeCurrentPhaseForTesting();
       expect(controller.phase, TimerPhase.idle);
       expect(controller.logs, hasLength(2));
       expect(controller.logs.every((log) => log.note == null), isTrue);
@@ -102,16 +100,15 @@ void main() {
       recorded.completeCurrentPhaseForTesting();
       recorded.completeCurrentPhaseForTesting();
       recorded.completeCurrentPhaseForTesting();
-      recorded.completeCurrentPhaseForTesting();
 
-      expect(recorded.logs, hasLength(4));
+      expect(recorded.logs, hasLength(3));
       expect(
         recorded.logs.where((log) => log.kind == LogKind.interval),
-        hasLength(2),
+        hasLength(1),
       );
       expect(
         recorded.logs.fold<int>(0, (sum, log) => sum + log.actualSeconds),
-        4 * 60,
+        3 * 60,
       );
       recorded.dispose();
     },
@@ -144,11 +141,10 @@ void main() {
 
       controller.completeCurrentPhaseForTesting();
       expect(controller.plans.single.isCompletedOn(today), isTrue);
-      expect(controller.phase, TimerPhase.longInterval);
-      controller.completeCurrentPhaseForTesting();
+      expect(controller.phase, TimerPhase.idle);
       expect(
         controller.logs.fold<int>(0, (sum, log) => sum + log.actualSeconds),
-        4 * 60,
+        3 * 60,
       );
       controller.dispose();
     },
@@ -193,6 +189,69 @@ void main() {
       controller.dispose();
     },
   );
+
+  test(
+    'disables unused break durations and skips zero-length phases',
+    () async {
+      final controller = AppController(MemoryAppStorage());
+      await controller.load();
+
+      controller
+        ..setGroupCount(2)
+        ..setLongIntervalMinutes(10)
+        ..setGroupCount(1)
+        ..setLongIntervalMinutes(5)
+        ..setCycleCount(1)
+        ..setIntervalMinutes(5);
+
+      expect(controller.longIntervalMinutes, 0);
+      expect(controller.intervalMinutes, 0);
+
+      controller
+        ..setGroupCount(2)
+        ..setCycleCount(2);
+      expect(controller.longIntervalMinutes, 15);
+      expect(controller.intervalMinutes, 5);
+      controller
+        ..setGroupCount(1)
+        ..setCycleCount(1);
+
+      controller.startTimer();
+      controller.completeCurrentPhaseForTesting();
+      expect(controller.phase, TimerPhase.idle);
+      controller.dispose();
+    },
+  );
+
+  test('normalizes legacy zero-break configurations when loading', () async {
+    final storage = MemoryAppStorage();
+    final initial = AppController(storage);
+    await initial.load();
+    await Future<void>.delayed(Duration.zero);
+    initial.dispose();
+
+    final now = DateTime.now();
+    storage.value!
+      ..['cycleCount'] = 1
+      ..['groupCount'] = 1
+      ..['intervalMinutes'] = 5
+      ..['longIntervalMinutes'] = 15
+      ..['timer'] = {
+        'phase': 'longInterval',
+        'remainingSeconds': 15 * 60,
+        'sessionStartedAt': now.toIso8601String(),
+        'targetEndAt': now.add(const Duration(minutes: 15)).toIso8601String(),
+        'currentCycle': 1,
+        'currentGroup': 1,
+      };
+
+    final restored = AppController(storage);
+    await restored.load();
+    expect(restored.intervalMinutes, 0);
+    expect(restored.longIntervalMinutes, 0);
+    expect(restored.phase, TimerPhase.idle);
+    restored.dispose();
+  });
 
   test('persists cycle settings', () async {
     final storage = MemoryAppStorage();
@@ -585,7 +644,7 @@ void main() {
       expect(arguments['groupCount'], 1);
       expect(arguments['focusSeconds'], 25 * 60);
       expect(arguments['intervalSeconds'], 5 * 60);
-      expect(arguments['longIntervalSeconds'], 15 * 60);
+      expect(arguments['longIntervalSeconds'], 0);
       expect(arguments, isNot(contains('isRunning')));
       expect(arguments['icon'], isNotNull);
 

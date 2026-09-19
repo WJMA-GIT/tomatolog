@@ -139,7 +139,7 @@ class AppPlatformService {
     } on MissingPluginException {
       return null;
     } on PlatformException catch (error) {
-      debugPrint('Android platform call $method failed: $error');
+      debugPrint('Platform call $method failed: $error');
       return null;
     }
   }

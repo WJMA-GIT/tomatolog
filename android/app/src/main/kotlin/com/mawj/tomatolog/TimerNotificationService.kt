@@ -32,7 +32,11 @@ class TimerNotificationService : Service() {
         when (intent?.action) {
             actionShow ->
                 intent.timerNotification()?.let {
-                    startTimer(it, intent.getLongExtra(extraDeadline, 0L))
+                    startTimer(
+                        it,
+                        intent.getLongExtra(extraDeadline, 0L),
+                        intent.getBooleanExtra(extraAnnounceTransition, true),
+                    )
                 }
             actionComplete -> {
                 val timer = intent.timerNotification() ?: activeTimer?.notification
@@ -54,9 +58,16 @@ class TimerNotificationService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun startTimer(timer: TimerNotification, requestedDeadlineWallClock: Long) {
+    private fun startTimer(
+        timer: TimerNotification,
+        requestedDeadlineWallClock: Long,
+        announceTransition: Boolean,
+    ) {
         createChannels()
         completionPosted = false
+        if (announceTransition) {
+            activeTimer?.notification?.let { postPhaseTransition(this, it, timer) }
+        }
         val deadlineWallClock =
             requestedDeadlineWallClock.takeIf { it > 0L }
                 ?: (System.currentTimeMillis() + timer.remainingSeconds * 1000L)
@@ -159,7 +170,9 @@ class TimerNotificationService : Service() {
         val builder = notificationBuilder(completionChannelId)
         setTimerIcons(builder, timer)
         builder
-            .setContentTitle("专注完成")
+            .setContentTitle(
+                if (timer.phase == "longInterval") "长休息结束 · 专注完成" else "专注完成",
+            )
             .setContentText("${timer.category} · 全部循环已完成")
             .setContentIntent(contentIntent)
             .setAutoCancel(true)
@@ -235,6 +248,7 @@ class TimerNotificationService : Service() {
         private const val extraColor = "color"
         private const val extraIcon = "icon"
         private const val extraDeadline = "deadline"
+        private const val extraAnnounceTransition = "announceTransition"
         private const val extraIsInterval = "isInterval"
         private const val extraPhase = "phase"
         private const val extraCurrentCycle = "currentCycle"
@@ -245,6 +259,7 @@ class TimerNotificationService : Service() {
         private const val extraIntervalSeconds = "intervalSeconds"
         private const val extraLongIntervalSeconds = "longIntervalSeconds"
         private const val completionAlarmRequest = 27
+        private const val transitionNotificationId = 29
         private val completionVibrationPattern = longArrayOf(0, 300, 180, 500)
 
         fun ensureChannels(context: Context) {
@@ -306,7 +321,11 @@ class TimerNotificationService : Service() {
                 .notify(completionTestNotificationId, builder.build())
         }
 
-        fun show(context: Context, timer: TimerNotification) {
+        fun show(
+            context: Context,
+            timer: TimerNotification,
+            announceTransition: Boolean = true,
+        ) {
             val deadline = System.currentTimeMillis() + timer.remainingSeconds * 1000L
             FloatingTimerService.updateIfVisible(
                 context,
@@ -324,6 +343,7 @@ class TimerNotificationService : Service() {
                     putExtra(extraColor, timer.color)
                     putExtra(extraIcon, timer.icon)
                     putExtra(extraDeadline, deadline)
+                    putExtra(extraAnnounceTransition, announceTransition)
                     putExtra(extraPhase, timer.phase)
                     putExtra(extraIsInterval, timer.phase != "running")
                     putExtra(extraCurrentCycle, timer.currentCycle)
@@ -361,7 +381,8 @@ class TimerNotificationService : Service() {
             val timer = alarmIntent.timerNotification() ?: return
             val next = timer.nextStage()
             if (next != null) {
-                show(context, next)
+                postPhaseTransition(context, timer, next)
+                show(context, next, announceTransition = false)
                 return
             }
             val manager =
@@ -389,7 +410,10 @@ class TimerNotificationService : Service() {
                 builder.setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             }
             builder
-                .setContentTitle("专注完成")
+                .setContentTitle(
+                    if (timer.phase == "longInterval") "长休息结束 · 专注完成"
+                    else "专注完成",
+                )
                 .setContentText(
                     "${timer.category} · 全部循环已完成",
                 ).setContentIntent(contentIntent)
@@ -406,6 +430,54 @@ class TimerNotificationService : Service() {
             manager.cancel(timerNotificationId)
             cancelScheduledCompletion(context)
             context.stopService(Intent(context, TimerNotificationService::class.java))
+        }
+
+        @Suppress("DEPRECATION")
+        private fun postPhaseTransition(
+            context: Context,
+            from: TimerNotification,
+            to: TimerNotification?,
+        ) {
+            val title = when {
+                from.phase == "running" && to?.phase == "interval" -> "短休息开始"
+                from.phase == "interval" && to?.phase == "running" -> "短休息结束"
+                from.phase == "running" && to?.phase == "longInterval" -> "长休息开始"
+                from.phase == "longInterval" -> "长休息结束"
+                else -> return
+            }
+            ensureChannels(context)
+            val builder =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Notification.Builder(context, completionChannelId)
+                } else {
+                    Notification.Builder(context)
+                        .setSound(completionSoundUri(context))
+                        .setVibrate(completionVibrationPattern)
+                }
+            val bitmap = from.icon?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && bitmap != null) {
+                builder
+                    .setSmallIcon(Icon.createWithBitmap(bitmap))
+                    .setLargeIcon(Icon.createWithBitmap(bitmap).setTint(from.color))
+            } else {
+                builder.setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            }
+            builder
+                .setContentTitle(title)
+                .setContentText(from.category)
+                .setContentIntent(
+                    PendingIntent.getActivity(
+                        context,
+                        3,
+                        context.packageManager.getLaunchIntentForPackage(context.packageName),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                    ),
+                )
+                .setAutoCancel(true)
+                .setCategory(Notification.CATEGORY_ALARM)
+                .setPriority(Notification.PRIORITY_HIGH)
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .notify(transitionNotificationId, builder.build())
         }
 
         private fun scheduleCompletion(context: Context, active: ActiveTimer) {
@@ -536,17 +608,42 @@ data class TimerNotification(
                 null
             }
         } else if (currentCycle < cycleCount) {
-            copy(
-                remainingSeconds = intervalSeconds,
-                totalSeconds = intervalSeconds,
-                phase = "interval",
-            )
+            if (intervalSeconds > 0) {
+                copy(
+                    remainingSeconds = intervalSeconds,
+                    totalSeconds = intervalSeconds,
+                    phase = "interval",
+                )
+            } else {
+                copy(
+                    remainingSeconds = focusSeconds,
+                    totalSeconds = focusSeconds,
+                    phase = "running",
+                    currentCycle = currentCycle + 1,
+                )
+            }
+        } else if (groupCount > 1) {
+            if (longIntervalSeconds <= 0) {
+                if (currentGroup < groupCount) {
+                    copy(
+                        remainingSeconds = focusSeconds,
+                        totalSeconds = focusSeconds,
+                        phase = "running",
+                        currentCycle = 1,
+                        currentGroup = currentGroup + 1,
+                    )
+                } else {
+                    null
+                }
+            } else {
+                copy(
+                    remainingSeconds = longIntervalSeconds,
+                    totalSeconds = longIntervalSeconds,
+                    phase = "longInterval",
+                )
+            }
         } else {
-            copy(
-                remainingSeconds = longIntervalSeconds,
-                totalSeconds = longIntervalSeconds,
-                phase = "longInterval",
-            )
+            null
         }
 }
 

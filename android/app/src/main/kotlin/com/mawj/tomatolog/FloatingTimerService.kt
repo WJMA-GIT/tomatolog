@@ -7,7 +7,9 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
@@ -19,12 +21,32 @@ import android.widget.Chronometer
 import android.widget.ImageView
 import android.widget.LinearLayout
 import kotlin.math.roundToInt
+import kotlin.random.Random
+
+private const val burnInMovePixels = 120
 
 class FloatingTimerService : Service() {
     private lateinit var windowManager: WindowManager
     private var floatingView: View? = null
     private var positionX: Int? = null
     private var positionY: Int? = null
+    private val burnInHandler = Handler(Looper.getMainLooper())
+    private val burnInMove = object : Runnable {
+        override fun run() {
+            val view = floatingView ?: return
+            val params = view.layoutParams as? WindowManager.LayoutParams ?: return
+            val (_, screenHeight) = screenSize()
+            params.y = nextBurnInY(
+                currentY = params.y,
+                minY = 0,
+                maxY = (screenHeight - view.height).coerceAtLeast(0),
+                moveDown = Random.nextBoolean(),
+            )
+            positionY = params.y
+            windowManager.updateViewLayout(view, params)
+            burnInHandler.postDelayed(this, burnInMoveIntervalMillis)
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -37,6 +59,7 @@ class FloatingTimerService : Service() {
     }
 
     override fun onDestroy() {
+        burnInHandler.removeCallbacks(burnInMove)
         floatingView?.let { runCatching { windowManager.removeView(it) } }
         floatingView = null
         visible = false
@@ -52,13 +75,14 @@ class FloatingTimerService : Service() {
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         }
         floatingView?.let { windowManager.removeView(it) }
+        burnInHandler.removeCallbacks(burnInMove)
 
         val remainingSeconds = intent.getIntExtra(extraRemaining, 0).coerceAtLeast(0)
         val deadline = SystemClock.elapsedRealtime() + remainingSeconds * 1000L
         val color = intent.getIntExtra(extraColor, Color.WHITE)
         val view = createView(intent, deadline, color)
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            dp(floatingWindowWidthDp),
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -77,6 +101,11 @@ class FloatingTimerService : Service() {
         makeDraggable(view, params)
         windowManager.addView(view, params)
         floatingView = view
+        view.post {
+            if (floatingView !== view) return@post
+            constrainToScreen(view, params)
+            burnInHandler.postDelayed(burnInMove, burnInMoveIntervalMillis)
+        }
         visible = true
     }
 
@@ -143,8 +172,11 @@ class FloatingTimerService : Service() {
                     val deltaX = event.rawX - touchX
                     val deltaY = event.rawY - touchY
                     moved = moved || deltaX * deltaX + deltaY * deltaY > touchSlop * touchSlop
-                    params.x = startX + deltaX.roundToInt()
-                    params.y = startY + deltaY.roundToInt()
+                    val (screenWidth, screenHeight) = screenSize()
+                    params.x = (startX + deltaX.roundToInt())
+                        .coerceIn(0, (screenWidth - view.width).coerceAtLeast(0))
+                    params.y = (startY + deltaY.roundToInt())
+                        .coerceIn(0, (screenHeight - view.height).coerceAtLeast(0))
                     positionX = params.x
                     positionY = params.y
                     windowManager.updateViewLayout(view, params)
@@ -164,6 +196,23 @@ class FloatingTimerService : Service() {
         }
     }
 
+    private fun constrainToScreen(view: View, params: WindowManager.LayoutParams) {
+        val (screenWidth, screenHeight) = screenSize()
+        params.x = params.x.coerceIn(0, (screenWidth - view.width).coerceAtLeast(0))
+        params.y = params.y.coerceIn(0, (screenHeight - view.height).coerceAtLeast(0))
+        positionX = params.x
+        positionY = params.y
+        windowManager.updateViewLayout(view, params)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun screenSize(): Pair<Int, Int> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            windowManager.currentWindowMetrics.bounds.let { it.width() to it.height() }
+        } else {
+            resources.displayMetrics.let { it.widthPixels to it.heightPixels }
+        }
+
     private fun dp(value: Int) = (value * resources.displayMetrics.density).roundToInt()
 
     companion object {
@@ -173,6 +222,8 @@ class FloatingTimerService : Service() {
         private const val extraRemaining = "remaining"
         private const val extraColor = "color"
         private const val extraIcon = "icon"
+        private const val floatingWindowWidthDp = 132
+        private const val burnInMoveIntervalMillis = 120_000L
         @Volatile private var visible = false
 
         fun show(
@@ -205,5 +256,18 @@ class FloatingTimerService : Service() {
         ) {
             if (visible) show(context, category, remainingSeconds, color, icon)
         }
+    }
+}
+
+internal fun nextBurnInY(currentY: Int, minY: Int, maxY: Int, moveDown: Boolean): Int {
+    val current = currentY.coerceIn(minY, maxY)
+    val canMoveUp = current - minY >= burnInMovePixels
+    val canMoveDown = maxY - current >= burnInMovePixels
+    return when {
+        canMoveUp && canMoveDown ->
+            current + if (moveDown) burnInMovePixels else -burnInMovePixels
+        canMoveDown -> current + burnInMovePixels
+        canMoveUp -> current - burnInMovePixels
+        else -> (if (moveDown) maxY else minY).coerceIn(minY, maxY)
     }
 }

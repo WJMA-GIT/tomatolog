@@ -86,6 +86,21 @@ class TimerScreen extends StatelessWidget {
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          FilledButton.icon(
+                            key: const Key('timer-primary-button'),
+                            onPressed: selected == null
+                                ? null
+                                : isIdle
+                                ? controller.startTimer
+                                : () => showTimerEndDialog(context, controller),
+                            icon: Icon(
+                              isIdle
+                                  ? Icons.play_arrow_rounded
+                                  : Icons.stop_circle_outlined,
+                            ),
+                            label: Text(isIdle ? '开始专注' : '结束'),
+                          ),
                         ],
                       ),
                     ],
@@ -124,36 +139,6 @@ class TimerScreen extends StatelessWidget {
               ),
             const SizedBox(height: 22),
           ],
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: FilledButton.icon(
-              onPressed: selected == null
-                  ? null
-                  : switch (controller.phase) {
-                      TimerPhase.idle => controller.startTimer,
-                      TimerPhase.running ||
-                      TimerPhase.interval ||
-                      TimerPhase.longInterval => () => showTimerEndDialog(
-                        context,
-                        controller,
-                      ),
-                    },
-              icon: Icon(
-                controller.phase == TimerPhase.running ||
-                        controller.phase == TimerPhase.interval ||
-                        controller.phase == TimerPhase.longInterval
-                    ? Icons.stop_circle_outlined
-                    : Icons.play_arrow_rounded,
-              ),
-              label: Text(switch (controller.phase) {
-                TimerPhase.idle => '开始专注',
-                TimerPhase.running => '结束',
-                TimerPhase.interval => '结束',
-                TimerPhase.longInterval => '结束',
-              }),
-            ),
-          ),
         ],
       ),
     );
@@ -180,6 +165,7 @@ class _CycleSettings extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final shortBreakEnabled = controller.cycleCount > 1;
+    final longBreakEnabled = controller.groupCount > 1;
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
@@ -230,14 +216,16 @@ class _CycleSettings extends StatelessWidget {
               label: '长休息时间',
               value: controller.longIntervalMinutes,
               suffix: '分钟',
-              onDecrease: controller.longIntervalMinutes > 1
+              enabled: longBreakEnabled,
+              onDecrease: longBreakEnabled && controller.longIntervalMinutes > 1
                   ? () => controller.setLongIntervalMinutes(
                       controller.longIntervalMinutes - 1,
                     )
                   : null,
               onIncrease:
-                  controller.longIntervalMinutes <
-                      AppController.maxIntervalMinutes
+                  longBreakEnabled &&
+                      controller.longIntervalMinutes <
+                          AppController.maxIntervalMinutes
                   ? () => controller.setLongIntervalMinutes(
                       controller.longIntervalMinutes + 1,
                     )

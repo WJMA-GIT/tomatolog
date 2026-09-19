@@ -55,7 +55,7 @@ class AppController extends ChangeNotifier {
   int _cycleCount = 4;
   int _groupCount = 1;
   int _intervalMinutes = 5;
-  int _longIntervalMinutes = 15;
+  int _longIntervalMinutes = 0;
   bool _recordIntervals = false;
   int _currentCycle = 1;
   int _currentGroup = 1;
@@ -182,10 +182,12 @@ class AppController extends ChangeNotifier {
       _floatingTimerEnabled = data['floatingTimerEnabled'] == true;
       _cycleCount = _validCycleCount(data['cycleCount']);
       _groupCount = _validGroupCount(data['groupCount']);
-      _intervalMinutes = _validIntervalMinutes(data['intervalMinutes']);
-      _longIntervalMinutes = _validLongIntervalMinutes(
-        data['longIntervalMinutes'],
-      );
+      _intervalMinutes = cycleCount == 1
+          ? 0
+          : _validIntervalMinutes(data['intervalMinutes']);
+      _longIntervalMinutes = groupCount == 1
+          ? 0
+          : _validLongIntervalMinutes(data['longIntervalMinutes']);
       _recordIntervals = data['recordIntervals'] == true;
       _ensureSelectedCategory();
       _restoreTimer(timerData);
@@ -281,6 +283,11 @@ class AppController extends ChangeNotifier {
       return;
     }
     _cycleCount = count;
+    if (count == 1) {
+      _intervalMinutes = 0;
+    } else if (intervalMinutes == 0) {
+      _intervalMinutes = 5;
+    }
     notifyListeners();
     _schedulePersist();
   }
@@ -293,12 +300,18 @@ class AppController extends ChangeNotifier {
       return;
     }
     _groupCount = count;
+    if (count == 1) {
+      _longIntervalMinutes = 0;
+    } else if (longIntervalMinutes == 0) {
+      _longIntervalMinutes = 15;
+    }
     notifyListeners();
     _schedulePersist();
   }
 
   void setIntervalMinutes(int minutes) {
     if (phase != TimerPhase.idle ||
+        cycleCount == 1 ||
         minutes <= 0 ||
         minutes > maxIntervalMinutes ||
         intervalMinutes == minutes) {
@@ -311,6 +324,7 @@ class AppController extends ChangeNotifier {
 
   void setLongIntervalMinutes(int minutes) {
     if (phase != TimerPhase.idle ||
+        groupCount == 1 ||
         minutes <= 0 ||
         minutes > maxIntervalMinutes ||
         longIntervalMinutes == minutes) {
@@ -733,8 +747,11 @@ class AppController extends ChangeNotifier {
     }
     if (completedPhase == TimerPhase.running && currentCycle < cycleCount) {
       _setTimerPhase(TimerPhase.interval, endedAt);
-    } else if (completedPhase == TimerPhase.running) {
+    } else if (completedPhase == TimerPhase.running && groupCount > 1) {
       _setTimerPhase(TimerPhase.longInterval, endedAt);
+    } else if (completedPhase == TimerPhase.running) {
+      _resetTimer();
+      return true;
     } else if (completedPhase == TimerPhase.interval) {
       _currentCycle++;
       _setTimerPhase(TimerPhase.running, endedAt);
@@ -792,6 +809,11 @@ class AppController extends ChangeNotifier {
     _currentGroup = (timerData['currentGroup'] as int? ?? 1)
         .clamp(1, groupCount)
         .toInt();
+    if ((phase == TimerPhase.interval && cycleCount == 1) ||
+        (phase == TimerPhase.longInterval && groupCount == 1)) {
+      _resetTimer();
+      return;
+    }
     final savedRemaining = timerData['remainingSeconds'] as int?;
     final maximumSeconds = currentPhaseSeconds;
     if (savedRemaining == null) {
@@ -1077,7 +1099,7 @@ class AppController extends ChangeNotifier {
     _cycleCount = 4;
     _groupCount = 1;
     _intervalMinutes = 5;
-    _longIntervalMinutes = 15;
+    _longIntervalMinutes = 0;
     _recordIntervals = false;
     _currentCycle = 1;
     _currentGroup = 1;

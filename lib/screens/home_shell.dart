@@ -58,9 +58,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Future<void> _refreshNotificationStatus({
     bool requestOnFirstOpen = false,
   }) async {
-    if (defaultTargetPlatform != TargetPlatform.android) return;
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return;
+    }
     final status = await widget.controller.notificationStatus();
     if (!mounted) return;
+    // An empty response means the native bridge is unavailable (for example,
+    // a widget test), not that the user denied notification access.
+    if (status.isEmpty) return;
     final granted = status['granted'] == true;
     setState(() {
       _notificationGranted = granted;
