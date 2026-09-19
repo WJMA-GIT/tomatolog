@@ -9,6 +9,7 @@ import '../ui/ui_helpers.dart';
 class TimerScreen extends StatelessWidget {
   const TimerScreen({super.key, required this.controller});
 
+  static const _dialDimension = 224.0;
   final AppController controller;
 
   @override
@@ -18,19 +19,20 @@ class TimerScreen extends StatelessWidget {
     final isIdle = controller.phase == TimerPhase.idle;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('专注计时', style: theme.textTheme.headlineMedium),
-          const SizedBox(height: 4),
+          Text('专注计时', style: theme.textTheme.headlineSmall),
           Text(
             isIdle ? '选择一件事，然后只做这一件事。' : '保持专注，时间正在被认真记录。',
-            style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 10),
           _CategoryPicker(controller: controller),
-          const SizedBox(height: 30),
+          const SizedBox(height: 12),
           Center(
             child: Semantics(
               label: '计时圆环，${controller.remainingSeconds} 秒',
@@ -44,7 +46,7 @@ class TimerScreen extends StatelessWidget {
                     ? (details) => _setMinutes(details.localPosition)
                     : null,
                 child: SizedBox.square(
-                  dimension: 264,
+                  dimension: _dialDimension,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -64,12 +66,13 @@ class TimerScreen extends StatelessWidget {
                           Text(
                             formatClock(controller.remainingSeconds),
                             style: theme.textTheme.displaySmall?.copyWith(
-                              fontSize: 56,
+                              fontSize: 42,
+                              height: 1,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -2,
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 4),
                           Text(
                             switch (controller.phase) {
                               TimerPhase.idle => '准备开始',
@@ -82,11 +85,16 @@ class TimerScreen extends StatelessWidget {
                               TimerPhase.longInterval =>
                                 '第 ${controller.currentGroup}/${controller.groupCount} 组完成 · 长休息',
                             },
-                            style: theme.textTheme.titleMedium?.copyWith(
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontSize: 12,
+                              height: 1.1,
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 6),
                           FilledButton.icon(
                             key: const Key('timer-primary-button'),
                             onPressed: selected == null
@@ -100,7 +108,39 @@ class TimerScreen extends StatelessWidget {
                                   : Icons.stop_circle_outlined,
                             ),
                             label: Text(isIdle ? '开始专注' : '结束'),
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                            ),
                           ),
+                          if (defaultTargetPlatform == TargetPlatform.android)
+                            SizedBox(
+                              height: 28,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () => controller.setFloatingTimerEnabled(
+                                  !controller.floatingTimerEnabled,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      '悬浮倒计时',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    Transform.scale(
+                                      scale: 0.68,
+                                      child: Switch(
+                                        value: controller.floatingTimerEnabled,
+                                        onChanged:
+                                            controller.setFloatingTimerEnabled,
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ],
@@ -109,10 +149,11 @@ class TimerScreen extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 10),
           if (isIdle) ...[
             Center(
               child: SegmentedButton<int>(
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
                 segments: const [
                   ButtonSegment(value: 15, label: Text('15 分')),
                   ButtonSegment(value: 25, label: Text('25 分')),
@@ -124,20 +165,8 @@ class TimerScreen extends StatelessWidget {
                 showSelectedIcon: false,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 8),
             _CycleSettings(controller: controller),
-            const SizedBox(height: 12),
-            if (defaultTargetPlatform == TargetPlatform.android)
-              Card(
-                child: SwitchListTile(
-                  title: const Text('悬浮倒计时'),
-                  subtitle: const Text('在其他应用上层显示分类图标和倒计时，首次开启需要授权'),
-                  secondary: const Icon(Icons.picture_in_picture_alt_rounded),
-                  value: controller.floatingTimerEnabled,
-                  onChanged: controller.setFloatingTimerEnabled,
-                ),
-              ),
-            const SizedBox(height: 22),
           ],
         ],
       ),
@@ -145,7 +174,7 @@ class TimerScreen extends StatelessWidget {
   }
 
   void _setMinutes(Offset position) {
-    const center = Offset(132, 132);
+    const center = Offset(_dialDimension / 2, _dialDimension / 2);
     var angle =
         math.atan2(position.dy - center.dy, position.dx - center.dx) +
         math.pi / 2;
@@ -168,73 +197,102 @@ class _CycleSettings extends StatelessWidget {
     final longBreakEnabled = controller.groupCount > 1;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
         child: Column(
           children: [
-            _CounterRow(
-              label: '循环次数',
-              value: controller.groupCount,
-              suffix: '组',
-              onDecrease: controller.groupCount > 1
-                  ? () => controller.setGroupCount(controller.groupCount - 1)
-                  : null,
-              onIncrease: controller.groupCount < AppController.maxGroupCount
-                  ? () => controller.setGroupCount(controller.groupCount + 1)
-                  : null,
+            Row(
+              children: [
+                Expanded(
+                  child: _CounterTile(
+                    label: '循环次数',
+                    value: controller.groupCount,
+                    suffix: '组',
+                    onDecrease: controller.groupCount > 1
+                        ? () => controller.setGroupCount(
+                            controller.groupCount - 1,
+                          )
+                        : null,
+                    onIncrease:
+                        controller.groupCount < AppController.maxGroupCount
+                        ? () => controller.setGroupCount(
+                            controller.groupCount + 1,
+                          )
+                        : null,
+                  ),
+                ),
+                Expanded(
+                  child: _CounterTile(
+                    label: '组内轮次',
+                    value: controller.cycleCount,
+                    suffix: '轮',
+                    onDecrease: controller.cycleCount > 1
+                        ? () => controller.setCycleCount(
+                            controller.cycleCount - 1,
+                          )
+                        : null,
+                    onIncrease:
+                        controller.cycleCount < AppController.maxCycleCount
+                        ? () => controller.setCycleCount(
+                            controller.cycleCount + 1,
+                          )
+                        : null,
+                  ),
+                ),
+              ],
             ),
-            _CounterRow(
-              label: '组内轮次',
-              value: controller.cycleCount,
-              suffix: '轮',
-              onDecrease: controller.cycleCount > 1
-                  ? () => controller.setCycleCount(controller.cycleCount - 1)
-                  : null,
-              onIncrease: controller.cycleCount < AppController.maxCycleCount
-                  ? () => controller.setCycleCount(controller.cycleCount + 1)
-                  : null,
-            ),
-            _CounterRow(
-              label: '休息时间',
-              value: controller.intervalMinutes,
-              suffix: '分钟',
-              enabled: shortBreakEnabled,
-              onDecrease: shortBreakEnabled && controller.intervalMinutes > 1
-                  ? () => controller.setIntervalMinutes(
-                      controller.intervalMinutes - 1,
-                    )
-                  : null,
-              onIncrease:
-                  shortBreakEnabled &&
-                      controller.intervalMinutes <
-                          AppController.maxIntervalMinutes
-                  ? () => controller.setIntervalMinutes(
-                      controller.intervalMinutes + 1,
-                    )
-                  : null,
-            ),
-            _CounterRow(
-              label: '长休息时间',
-              value: controller.longIntervalMinutes,
-              suffix: '分钟',
-              enabled: longBreakEnabled,
-              onDecrease: longBreakEnabled && controller.longIntervalMinutes > 1
-                  ? () => controller.setLongIntervalMinutes(
-                      controller.longIntervalMinutes - 1,
-                    )
-                  : null,
-              onIncrease:
-                  longBreakEnabled &&
-                      controller.longIntervalMinutes <
-                          AppController.maxIntervalMinutes
-                  ? () => controller.setLongIntervalMinutes(
-                      controller.longIntervalMinutes + 1,
-                    )
-                  : null,
+            Row(
+              children: [
+                Expanded(
+                  child: _CounterTile(
+                    label: '休息时间',
+                    value: controller.intervalMinutes,
+                    suffix: '分钟',
+                    enabled: shortBreakEnabled,
+                    onDecrease:
+                        shortBreakEnabled && controller.intervalMinutes > 1
+                        ? () => controller.setIntervalMinutes(
+                            controller.intervalMinutes - 1,
+                          )
+                        : null,
+                    onIncrease:
+                        shortBreakEnabled &&
+                            controller.intervalMinutes <
+                                AppController.maxIntervalMinutes
+                        ? () => controller.setIntervalMinutes(
+                            controller.intervalMinutes + 1,
+                          )
+                        : null,
+                  ),
+                ),
+                Expanded(
+                  child: _CounterTile(
+                    label: '长休息时间',
+                    value: controller.longIntervalMinutes,
+                    suffix: '分钟',
+                    enabled: longBreakEnabled,
+                    onDecrease:
+                        longBreakEnabled && controller.longIntervalMinutes > 1
+                        ? () => controller.setLongIntervalMinutes(
+                            controller.longIntervalMinutes - 1,
+                          )
+                        : null,
+                    onIncrease:
+                        longBreakEnabled &&
+                            controller.longIntervalMinutes <
+                                AppController.maxIntervalMinutes
+                        ? () => controller.setLongIntervalMinutes(
+                            controller.longIntervalMinutes + 1,
+                          )
+                        : null,
+                  ),
+                ),
+              ],
             ),
             SwitchListTile(
-              contentPadding: const EdgeInsets.only(left: 0),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               title: const Text('间隔计入统计'),
-              subtitle: const Text('休息和长休息会归入当前分类'),
               value: controller.recordIntervals,
               onChanged: controller.setRecordIntervals,
             ),
@@ -245,8 +303,8 @@ class _CycleSettings extends StatelessWidget {
   }
 }
 
-class _CounterRow extends StatelessWidget {
-  const _CounterRow({
+class _CounterTile extends StatelessWidget {
+  const _CounterTile({
     required this.label,
     required this.value,
     required this.suffix,
@@ -264,35 +322,51 @@ class _CounterRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: enabled
-                  ? null
-                  : Theme.of(context).colorScheme.onSurfaceVariant,
+        Text(
+          label,
+          maxLines: 1,
+          style: TextStyle(
+            fontSize: 13,
+            color: enabled
+                ? null
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              tooltip: '减少$label',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              padding: EdgeInsets.zero,
+              onPressed: enabled ? onDecrease : null,
+              icon: const Icon(Icons.remove_circle_outline_rounded, size: 20),
             ),
-          ),
-        ),
-        IconButton(
-          tooltip: '减少$label',
-          onPressed: enabled ? onDecrease : null,
-          icon: const Icon(Icons.remove_circle_outline_rounded),
-        ),
-        SizedBox(
-          width: 58,
-          child: Text(
-            '$value $suffix',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
-        IconButton(
-          tooltip: '增加$label',
-          onPressed: enabled ? onIncrease : null,
-          icon: const Icon(Icons.add_circle_outline_rounded),
+            SizedBox(
+              width: 58,
+              child: Text(
+                '$value $suffix',
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: '增加$label',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              padding: EdgeInsets.zero,
+              onPressed: enabled ? onIncrease : null,
+              icon: const Icon(Icons.add_circle_outline_rounded, size: 20),
+            ),
+          ],
         ),
       ],
     );

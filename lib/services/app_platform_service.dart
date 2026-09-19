@@ -72,6 +72,9 @@ class AppPlatformService {
 
   Future<void> hideFloatingTimer() => _invoke<void>('hideFloatingTimer');
 
+  Future<void> setKeepScreenOn(bool enabled) =>
+      _invoke<void>('setKeepScreenOn', enabled);
+
   Future<String?> pickBackgroundImage() =>
       _invoke<String>('pickBackgroundImage');
 

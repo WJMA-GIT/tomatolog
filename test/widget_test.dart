@@ -468,6 +468,40 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('keeps idle configuration on one common portrait page', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = AppController(MemoryAppStorage());
+    await controller.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ListenableBuilder(
+          listenable: controller,
+          builder: (_, _) =>
+              Scaffold(body: TimerScreen(controller: controller)),
+        ),
+      ),
+    );
+
+    final dial = tester.getRect(find.byType(CircularProgressIndicator));
+    expect(dial.contains(tester.getCenter(find.text('悬浮倒计时'))), isTrue);
+    expect(
+      tester
+          .state<ScrollableState>(find.byType(Scrollable))
+          .position
+          .maxScrollExtent,
+      0,
+    );
+    for (final label in ['循环次数', '组内轮次', '休息时间', '长休息时间', '间隔计入统计']) {
+      expect(find.text(label).hitTestable(), findsOneWidget);
+    }
+    controller.dispose();
+  });
+
   testWidgets('starts and ends the timer from the button inside the dial', (
     tester,
   ) async {

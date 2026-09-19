@@ -83,7 +83,7 @@ class FloatingTimerService : Service() {
         val view = createView(intent, deadline, color)
         val params = WindowManager.LayoutParams(
             dp(floatingWindowWidthDp),
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            dp(floatingWindowHeightDp),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
@@ -114,13 +114,13 @@ class FloatingTimerService : Service() {
         val iconBytes = intent.getByteArrayExtra(extraIcon)
         val background = GradientDrawable().apply {
             setColor(Color.argb(205, 32, 33, 36))
-            cornerRadius = dp(18).toFloat()
+            cornerRadius = dp(12).toFloat()
             setStroke(dp(1), Color.argb(70, Color.red(color), Color.green(color), Color.blue(color)))
         }
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(14), dp(8))
+            setPadding(dp(5), dp(4), dp(5), dp(4))
             this.background = background
             contentDescription = if (category.isBlank()) "悬浮倒计时" else "$category 悬浮倒计时"
 
@@ -128,8 +128,8 @@ class FloatingTimerService : Service() {
                 addView(ImageView(context).apply {
                     setImageBitmap(BitmapFactory.decodeByteArray(iconBytes, 0, iconBytes.size))
                     setColorFilter(color)
-                }, LinearLayout.LayoutParams(dp(28), dp(28)).apply {
-                    marginEnd = dp(8)
+                }, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+                    marginEnd = dp(4)
                 })
             }
 
@@ -138,7 +138,7 @@ class FloatingTimerService : Service() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) isCountDown = true
                 format = "%s"
                 setTextColor(Color.WHITE)
-                textSize = 18f
+                textSize = 14f
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
                 setOnChronometerTickListener {
                     if (SystemClock.elapsedRealtime() >= deadline) {
@@ -222,7 +222,8 @@ class FloatingTimerService : Service() {
         private const val extraRemaining = "remaining"
         private const val extraColor = "color"
         private const val extraIcon = "icon"
-        private const val floatingWindowWidthDp = 132
+        private const val floatingWindowWidthDp = 92
+        private const val floatingWindowHeightDp = 30
         private const val burnInMoveIntervalMillis = 120_000L
         @Volatile private var visible = false
 

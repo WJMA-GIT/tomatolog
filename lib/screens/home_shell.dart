@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../controllers/app_controller.dart';
+import '../widgets/landscape_timer_mode.dart';
 import 'categories_screen.dart';
 import 'insights_screen.dart';
 import 'logs_screen.dart';
@@ -128,7 +129,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       animation: widget.controller,
       builder: (context, _) {
         final backgroundPath = widget.controller.backgroundImagePath;
-        return PopScope(
+        final content = PopScope(
           canPop:
               !_showNotificationGuide &&
               !_showNotificationSetupGuide &&
@@ -394,6 +395,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 ),
             ],
           ),
+        );
+        return LandscapeTimerMode(
+          controller: widget.controller,
+          child: content,
         );
       },
     );

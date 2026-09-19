@@ -67,6 +67,9 @@ import UserNotifications
       let action = UserDefaults.standard.string(forKey: "pending_notification_action")
       UserDefaults.standard.removeObject(forKey: "pending_notification_action")
       result(action)
+    case "setKeepScreenOn":
+      UIApplication.shared.isIdleTimerDisabled = call.arguments as? Bool ?? false
+      result(nil)
     case "markBatteryOptimizationGuideShown", "requestBatteryOptimizationExemption":
       result(nil)
     default:

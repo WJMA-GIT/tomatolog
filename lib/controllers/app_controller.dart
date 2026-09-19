@@ -99,6 +99,10 @@ class AppController extends ChangeNotifier {
 
   bool get floatingTimerEnabled => _floatingTimerEnabled;
 
+  Future<void> setKeepScreenOn(bool enabled) async {
+    await _platform?.setKeepScreenOn(enabled);
+  }
+
   List<FocusCategory> get categories => _categoriesView;
 
   List<FocusCategory> get activeCategories =>
