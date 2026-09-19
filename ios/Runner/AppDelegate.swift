@@ -116,7 +116,7 @@ import UserNotifications
 
   private func openNotificationSettings() {
     let url: URL?
-    if #available(iOS 15.4, *) {
+    if #available(iOS 16.0, *) {
       url = URL(string: UIApplication.openNotificationSettingsURLString)
     } else {
       url = URL(string: UIApplication.openSettingsURLString)
