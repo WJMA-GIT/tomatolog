@@ -121,7 +121,7 @@ class WebDavClient {
           .openUrl(method, _uri(path))
           .timeout(timeout);
       request.headers.set(HttpHeaders.authorizationHeader, _authorization);
-      request.headers.set(HttpHeaders.userAgentHeader, 'tomatolog/0.0.5');
+      request.headers.set(HttpHeaders.userAgentHeader, 'tomatolog/0.0.6');
       headers.forEach(request.headers.set);
       if (body != null) {
         request.contentLength = body.length;

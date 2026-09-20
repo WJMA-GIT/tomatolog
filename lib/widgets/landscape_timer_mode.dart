@@ -43,15 +43,22 @@ class _LandscapeTimerModeState extends State<LandscapeTimerMode> {
       child: Center(
         child: _blackout
             ? const SizedBox.shrink(key: Key('landscape-timer-blackout'))
-            : Text(
-                formatClock(widget.controller.remainingSeconds),
-                key: const Key('landscape-timer-clock'),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 112,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 2,
-                  fontFeatures: [FontFeature.tabularFigures()],
+            : Padding(
+                padding: const EdgeInsets.all(12),
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    formatClock(widget.controller.remainingSeconds),
+                    key: const Key('landscape-timer-clock'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 320,
+                      fontWeight: FontWeight.w600,
+                      height: 1,
+                      letterSpacing: 2,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
                 ),
               ),
       ),

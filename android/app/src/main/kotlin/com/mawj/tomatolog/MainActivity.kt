@@ -9,6 +9,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -66,11 +69,7 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "setKeepScreenOn" -> {
-                    if (call.arguments == true) {
-                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    } else {
-                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    }
+                    setLandscapeDisplayActive(call.arguments == true)
                     result.success(null)
                 }
                 "openCompletionNotificationSettings" -> {
@@ -160,6 +159,42 @@ class MainActivity : FlutterActivity() {
         if (consumeNotificationAction() == "stopTimer") {
             platformChannel?.invokeMethod("stopTimer", null)
         }
+    }
+
+    private fun setLandscapeDisplayActive(active: Boolean) {
+        if (active) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.apply {
+                systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                if (active) {
+                    hide(WindowInsets.Type.systemBars())
+                } else {
+                    show(WindowInsets.Type.systemBars())
+                }
+            }
+            return
+        }
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = if (active) {
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        } else {
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        FloatingTimerService.hide(this)
     }
 
     private fun consumeNotificationAction(): String? {

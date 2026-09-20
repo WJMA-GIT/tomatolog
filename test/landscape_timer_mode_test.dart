@@ -55,6 +55,17 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('landscape-timer-clock')), findsOneWidget);
+    expect(
+      find.ancestor(of: find.byType(Text), matching: find.byType(FittedBox)),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const Key('landscape-timer-clock')))
+          .style
+          ?.fontSize,
+      320,
+    );
     expect(keepScreenOn, [true]);
 
     await tester.pump(const Duration(milliseconds: 10));

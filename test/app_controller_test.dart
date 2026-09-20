@@ -60,6 +60,39 @@ void main() {
     controller.dispose();
   });
 
+  test('persists editable timer presets and rejects invalid values', () async {
+    final storage = MemoryAppStorage();
+    final controller = AppController(storage);
+    await controller.load();
+
+    expect(controller.timerPresets.map((preset) => preset.minutes), [
+      15,
+      25,
+      45,
+    ]);
+    controller.setTimerPresets(const [
+      TimerPreset(name: '冲刺', minutes: 10),
+      TimerPreset(name: '番茄', minutes: 30),
+      TimerPreset(name: '深度', minutes: 60),
+    ]);
+    await Future<void>.delayed(Duration.zero);
+
+    final restored = AppController(storage);
+    await restored.load();
+    expect(
+      restored.timerPresets.map((preset) => '${preset.name}:${preset.minutes}'),
+      ['冲刺:10', '番茄:30', '深度:60'],
+    );
+    restored.setTimerPresets(const [
+      TimerPreset(name: '', minutes: 10),
+      TimerPreset(name: '番茄', minutes: 30),
+      TimerPreset(name: '深度', minutes: 60),
+    ]);
+    expect(restored.timerPresets.first.name, '冲刺');
+    controller.dispose();
+    restored.dispose();
+  });
+
   test(
     'runs configured focus cycles and optionally records intervals',
     () async {
@@ -654,39 +687,58 @@ void main() {
     },
   );
 
-  test('requests overlay permission and shows the floating timer', () async {
-    const channel = MethodChannel('tomatolog/platform');
-    final calls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          calls.add(call);
-          if (call.method == 'floatingTimerPermissionGranted') return true;
-          return null;
-        });
-    addTearDown(() {
+  test(
+    'shows the floating timer only while the app is in background',
+    () async {
+      const channel = MethodChannel('tomatolog/platform');
+      final calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-    });
-    final controller = AppController(MemoryAppStorage(), AppPlatformService());
-    await controller.load();
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            if (call.method == 'floatingTimerPermissionGranted') return true;
+            return null;
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+      final controller = AppController(
+        MemoryAppStorage(),
+        AppPlatformService(),
+      );
+      await controller.load();
 
-    await controller.setFloatingTimerEnabled(true);
-    controller.startTimer();
-    await pumpEventQueue(times: 20);
+      await controller.setFloatingTimerEnabled(true);
+      controller.startTimer();
+      await pumpEventQueue(times: 20);
 
-    expect(controller.floatingTimerEnabled, isTrue);
-    expect(
-      calls.where((call) => call.method == 'showFloatingTimer'),
-      hasLength(1),
-    );
-    final arguments =
-        (calls.lastWhere((call) => call.method == 'showFloatingTimer').arguments
-                as Map)
-            .cast<String, Object?>();
-    expect(arguments['category'], '工作');
-    expect(arguments['remainingSeconds'], 25 * 60);
-    expect(arguments['icon'], isNotNull);
-    controller.stopTimer(saveInterrupted: false);
-    controller.dispose();
-  });
+      expect(controller.floatingTimerEnabled, isTrue);
+      expect(
+        calls.where((call) => call.method == 'showFloatingTimer'),
+        isEmpty,
+      );
+
+      controller.setAppInForeground(false);
+      await pumpEventQueue(times: 20);
+      expect(
+        calls.where((call) => call.method == 'showFloatingTimer'),
+        hasLength(1),
+      );
+      final arguments =
+          (calls
+                      .lastWhere((call) => call.method == 'showFloatingTimer')
+                      .arguments
+                  as Map)
+              .cast<String, Object?>();
+      expect(arguments['category'], '工作');
+      expect(arguments['remainingSeconds'], 25 * 60);
+      expect(arguments['icon'], isNotNull);
+
+      controller.setAppInForeground(true);
+      await pumpEventQueue(times: 20);
+      expect(calls.last.method, 'hideFloatingTimer');
+      controller.stopTimer(saveInterrupted: false);
+      controller.dispose();
+    },
+  );
 }

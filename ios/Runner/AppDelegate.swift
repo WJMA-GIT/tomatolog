@@ -68,7 +68,9 @@ import UserNotifications
       UserDefaults.standard.removeObject(forKey: "pending_notification_action")
       result(action)
     case "setKeepScreenOn":
-      UIApplication.shared.isIdleTimerDisabled = call.arguments as? Bool ?? false
+      let active = call.arguments as? Bool ?? false
+      UIApplication.shared.isIdleTimerDisabled = active
+      landscapeViewController()?.setLandscapeTimerActive(active)
       result(nil)
     case "markBatteryOptimizationGuideShown", "requestBatteryOptimizationExemption":
       result(nil)
@@ -125,6 +127,14 @@ import UserNotifications
       url = URL(string: UIApplication.openSettingsURLString)
     }
     if let url = url { UIApplication.shared.open(url) }
+  }
+
+  private func landscapeViewController() -> TimerFlutterViewController? {
+    UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap(\.windows)
+      .first(where: \.isKeyWindow)?
+      .rootViewController as? TimerFlutterViewController
   }
 
   private func registerNotificationCategory() {

@@ -80,9 +80,9 @@ class FloatingTimerService : Service() {
         val remainingSeconds = intent.getIntExtra(extraRemaining, 0).coerceAtLeast(0)
         val deadline = SystemClock.elapsedRealtime() + remainingSeconds * 1000L
         val color = intent.getIntExtra(extraColor, Color.WHITE)
-        val view = createView(intent, deadline, color)
+        val view = createView(intent, deadline, remainingSeconds, color)
         val params = WindowManager.LayoutParams(
-            dp(floatingWindowWidthDp),
+            WindowManager.LayoutParams.WRAP_CONTENT,
             dp(floatingWindowHeightDp),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -109,7 +109,12 @@ class FloatingTimerService : Service() {
         visible = true
     }
 
-    private fun createView(intent: Intent, deadline: Long, color: Int): View {
+    private fun createView(
+        intent: Intent,
+        deadline: Long,
+        remainingSeconds: Int,
+        color: Int,
+    ): View {
         val category = intent.getStringExtra(extraCategory).orEmpty()
         val iconBytes = intent.getByteArrayExtra(extraIcon)
         val background = GradientDrawable().apply {
@@ -120,7 +125,7 @@ class FloatingTimerService : Service() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(5), dp(4), dp(5), dp(4))
+            setPadding(dp(4), dp(4), dp(3), dp(4))
             this.background = background
             contentDescription = if (category.isBlank()) "悬浮倒计时" else "$category 悬浮倒计时"
 
@@ -129,7 +134,7 @@ class FloatingTimerService : Service() {
                     setImageBitmap(BitmapFactory.decodeByteArray(iconBytes, 0, iconBytes.size))
                     setColorFilter(color)
                 }, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
-                    marginEnd = dp(4)
+                    marginEnd = dp(3)
                 })
             }
 
@@ -139,7 +144,12 @@ class FloatingTimerService : Service() {
                 format = "%s"
                 setTextColor(Color.WHITE)
                 textSize = 14f
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                typeface = android.graphics.Typeface.create(
+                    android.graphics.Typeface.MONOSPACE,
+                    android.graphics.Typeface.BOLD,
+                )
+                gravity = Gravity.CENTER
+                minimumWidth = dp(if (remainingSeconds >= 3600) 68 else 44)
                 setOnChronometerTickListener {
                     if (SystemClock.elapsedRealtime() >= deadline) {
                         stop()
@@ -222,7 +232,6 @@ class FloatingTimerService : Service() {
         private const val extraRemaining = "remaining"
         private const val extraColor = "color"
         private const val extraIcon = "icon"
-        private const val floatingWindowWidthDp = 92
         private const val floatingWindowHeightDp = 30
         private const val burnInMoveIntervalMillis = 120_000L
         @Volatile private var visible = false
@@ -245,6 +254,7 @@ class FloatingTimerService : Service() {
         }
 
         fun hide(context: Context) {
+            visible = false
             context.stopService(Intent(context, FloatingTimerService::class.java))
         }
 

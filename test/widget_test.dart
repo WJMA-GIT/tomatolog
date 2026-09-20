@@ -402,6 +402,39 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('edits and cancels reusable timer presets', (tester) async {
+    final controller = AppController(MemoryAppStorage());
+    await controller.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ListenableBuilder(
+          listenable: controller,
+          builder: (_, _) =>
+              Scaffold(body: TimerScreen(controller: controller)),
+        ),
+      ),
+    );
+
+    expect(find.text('准备开始'), findsNothing);
+    await tester.tap(find.byKey(const Key('edit-timer-presets')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '冲刺');
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(controller.timerPresets.first.name, '短时');
+
+    await tester.tap(find.byKey(const Key('edit-timer-presets')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), '冲刺');
+    await tester.enterText(find.byType(TextField).at(1), '10');
+    await tester.tap(find.text('保存配置'));
+    await tester.pumpAndSettle();
+    expect(controller.timerPresets.first.name, '冲刺');
+    expect(controller.timerPresets.first.minutes, 10);
+    expect(find.text('冲刺 10分'), findsOneWidget);
+    controller.dispose();
+  });
+
   testWidgets('configures timer cycles and interval statistics', (
     tester,
   ) async {
@@ -530,6 +563,12 @@ void main() {
     await tester.tap(buttonFinder);
     await tester.pumpAndSettle();
     expect(find.text('结束这次专注？'), findsOneWidget);
+    final actionCenters = [
+      '继续专注',
+      '丢弃记录',
+      '保存记录',
+    ].map((label) => tester.getCenter(find.text(label))).toList();
+    expect(actionCenters.map((center) => center.dy).toSet(), hasLength(1));
     await tester.tap(find.text('丢弃记录'));
     await tester.pumpAndSettle();
     expect(controller.phase, TimerPhase.idle);

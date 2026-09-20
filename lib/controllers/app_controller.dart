@@ -16,6 +16,15 @@ enum TimerPhase { idle, running, interval, longInterval }
 
 enum AppThemePreference { system, light, dark }
 
+class TimerPreset {
+  const TimerPreset({required this.name, required this.minutes});
+
+  final String name;
+  final int minutes;
+
+  Map<String, Object?> toJson() => {'name': name, 'minutes': minutes};
+}
+
 class AppController extends ChangeNotifier {
   AppController(this._storage, [this._platform, this.webDav]) {
     webDav?.attach(
@@ -38,11 +47,15 @@ class AppController extends ChangeNotifier {
   final List<FocusCategory> _categories = [];
   final List<TimeLog> _logs = [];
   final List<DailyPlan> _plans = [];
+  final List<TimerPreset> _timerPresets = [];
   late final List<FocusCategory> _categoriesView = UnmodifiableListView(
     _categories,
   );
   late final List<TimeLog> _logsView = UnmodifiableListView(_logs);
   late final List<DailyPlan> _plansView = UnmodifiableListView(_plans);
+  late final List<TimerPreset> _timerPresetsView = UnmodifiableListView(
+    _timerPresets,
+  );
   Timer? _ticker;
   Timer? _midnightRefresh;
   Future<void> _pendingPersist = Future.value();
@@ -65,6 +78,7 @@ class AppController extends ChangeNotifier {
   int _accentColorValue = defaultAccentColorValue;
   String? _backgroundImagePath;
   bool _floatingTimerEnabled = false;
+  bool _appInForeground = true;
 
   TimerPhase get phase => _phase;
 
@@ -114,6 +128,8 @@ class AppController extends ChangeNotifier {
   List<TimeLog> get logs => _logsView;
 
   List<DailyPlan> get plans => _plansView;
+
+  List<TimerPreset> get timerPresets => _timerPresetsView;
 
   FocusCategory? get selectedCategory => categoryById(selectedCategoryId ?? '');
 
@@ -175,6 +191,9 @@ class AppController extends ChangeNotifier {
       _rememberExistingIds();
 
       final timerData = (data['timer'] as Map?)?.cast<String, Object?>();
+      _timerPresets
+        ..clear()
+        ..addAll(_parseTimerPresets(data['timerPresets']));
       _plannedMinutes = _parseTimerPhase(timerData?['phase']) == TimerPhase.idle
           ? 25
           : _validPlannedMinutes(data['plannedMinutes']);
@@ -275,6 +294,26 @@ class AppController extends ChangeNotifier {
     }
     _plannedMinutes = minutes;
     _remainingSeconds = minutes * 60;
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  void setTimerPresets(List<TimerPreset> presets) {
+    if (phase != TimerPhase.idle || presets.length != 3) return;
+    final normalized = <TimerPreset>[];
+    for (final preset in presets) {
+      final name = preset.name.trim();
+      if (name.isEmpty ||
+          name.length > 8 ||
+          preset.minutes <= 0 ||
+          preset.minutes > timerDialMinutes) {
+        return;
+      }
+      normalized.add(TimerPreset(name: name, minutes: preset.minutes));
+    }
+    _timerPresets
+      ..clear()
+      ..addAll(normalized);
     notifyListeners();
     _schedulePersist();
   }
@@ -692,6 +731,16 @@ class AppController extends ChangeNotifier {
     _showFloatingTimer();
   }
 
+  void setAppInForeground(bool foreground) {
+    if (_appInForeground == foreground) return;
+    _appInForeground = foreground;
+    if (foreground) {
+      unawaited(_platform?.hideFloatingTimer());
+    } else {
+      _showFloatingTimer();
+    }
+  }
+
   void _startTicker() {
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -975,6 +1024,7 @@ class AppController extends ChangeNotifier {
     'plans': _plans.map((item) => item.toJson()).toList(),
     'selectedCategoryId': selectedCategoryId,
     'plannedMinutes': plannedMinutes,
+    'timerPresets': timerPresets.map((preset) => preset.toJson()).toList(),
     'themePreference': themePreference.name,
     'accentColorValue': accentColorValue,
     'backgroundImagePath': backgroundImagePath,
@@ -1099,6 +1149,9 @@ class AppController extends ChangeNotifier {
     _plans.clear();
     _phase = TimerPhase.idle;
     _plannedMinutes = 25;
+    _timerPresets
+      ..clear()
+      ..addAll(_defaultTimerPresets);
     _remainingSeconds = plannedMinutes * 60;
     _cycleCount = 4;
     _groupCount = 1;
@@ -1119,6 +1172,32 @@ class AppController extends ChangeNotifier {
   static int _validPlannedMinutes(Object? value) {
     return value is int && value > 0 && value <= timerDialMinutes ? value : 25;
   }
+
+  static List<TimerPreset> _parseTimerPresets(Object? value) {
+    if (value is! List || value.length != 3) return _defaultTimerPresets;
+    final presets = <TimerPreset>[];
+    for (final item in value) {
+      if (item is! Map) return _defaultTimerPresets;
+      final name = item['name'];
+      final minutes = item['minutes'];
+      if (name is! String ||
+          name.trim().isEmpty ||
+          name.trim().length > 8 ||
+          minutes is! int ||
+          minutes <= 0 ||
+          minutes > timerDialMinutes) {
+        return _defaultTimerPresets;
+      }
+      presets.add(TimerPreset(name: name.trim(), minutes: minutes));
+    }
+    return presets;
+  }
+
+  static const _defaultTimerPresets = [
+    TimerPreset(name: '短时', minutes: 15),
+    TimerPreset(name: '标准', minutes: 25),
+    TimerPreset(name: '长时', minutes: 45),
+  ];
 
   static int _validCycleCount(Object? value) {
     return value is int && value > 0 && value <= maxCycleCount ? value : 4;
@@ -1184,7 +1263,10 @@ class AppController extends ChangeNotifier {
 
   void _showFloatingTimer() {
     final category = selectedCategory;
-    if (!floatingTimerEnabled || category == null || phase == TimerPhase.idle) {
+    if (_appInForeground ||
+        !floatingTimerEnabled ||
+        category == null ||
+        phase == TimerPhase.idle) {
       return;
     }
     unawaited(

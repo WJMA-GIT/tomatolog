@@ -46,7 +46,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _handleAppResumed();
+    if (state == AppLifecycleState.resumed) {
+      widget.controller.setAppInForeground(true);
+      _handleAppResumed();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      widget.controller.setAppInForeground(false);
+    }
   }
 
   Future<void> _handleAppResumed() async {

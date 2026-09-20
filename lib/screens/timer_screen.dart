@@ -9,7 +9,7 @@ import '../ui/ui_helpers.dart';
 class TimerScreen extends StatelessWidget {
   const TimerScreen({super.key, required this.controller});
 
-  static const _dialDimension = 224.0;
+  static const _dialDimension = 248.0;
   final AppController controller;
 
   @override
@@ -52,7 +52,7 @@ class TimerScreen extends StatelessWidget {
                     children: [
                       CircularProgressIndicator(
                         value: controller.progress,
-                        strokeWidth: 13,
+                        strokeWidth: 16,
                         strokeCap: StrokeCap.round,
                         color: selected == null
                             ? theme.colorScheme.primary
@@ -72,29 +72,31 @@ class TimerScreen extends StatelessWidget {
                               letterSpacing: -2,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            switch (controller.phase) {
-                              TimerPhase.idle => '准备开始',
-                              TimerPhase.running =>
-                                '第 ${controller.currentGroup}/${controller.groupCount} 组 · '
-                                    '第 ${controller.currentCycle}/${controller.cycleCount} 轮 · 专注中',
-                              TimerPhase.interval =>
-                                '第 ${controller.currentGroup} 组 · '
-                                    '第 ${controller.currentCycle} 轮完成 · 休息中',
-                              TimerPhase.longInterval =>
-                                '第 ${controller.currentGroup}/${controller.groupCount} 组完成 · 长休息',
-                            },
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontSize: 12,
-                              height: 1.1,
-                              color: theme.colorScheme.onSurfaceVariant,
+                          if (!isIdle) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              switch (controller.phase) {
+                                TimerPhase.idle => '',
+                                TimerPhase.running =>
+                                  '第 ${controller.currentGroup}/${controller.groupCount} 组 · '
+                                      '第 ${controller.currentCycle}/${controller.cycleCount} 轮 · 专注中',
+                                TimerPhase.interval =>
+                                  '第 ${controller.currentGroup} 组 · '
+                                      '第 ${controller.currentCycle} 轮完成 · 休息中',
+                                TimerPhase.longInterval =>
+                                  '第 ${controller.currentGroup}/${controller.groupCount} 组完成 · 长休息',
+                              },
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontSize: 12,
+                                height: 1.1,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 6),
+                          ],
+                          const SizedBox(height: 12),
                           FilledButton.icon(
                             key: const Key('timer-primary-button'),
                             onPressed: selected == null
@@ -151,19 +153,39 @@ class TimerScreen extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           if (isIdle) ...[
-            Center(
-              child: SegmentedButton<int>(
-                style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                segments: const [
-                  ButtonSegment(value: 15, label: Text('15 分')),
-                  ButtonSegment(value: 25, label: Text('25 分')),
-                  ButtonSegment(value: 45, label: Text('45 分')),
-                ],
-                selected: {controller.plannedMinutes},
-                onSelectionChanged: (values) =>
-                    controller.setPlannedMinutes(values.first),
-                showSelectedIcon: false,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ...controller.timerPresets.map(
+                  (preset) => Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: ChoiceChip(
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('${preset.name} ${preset.minutes}分'),
+                        ),
+                        labelPadding: const EdgeInsets.symmetric(horizontal: 3),
+                        selected: controller.plannedMinutes == preset.minutes,
+                        onSelected: (_) =>
+                            controller.setPlannedMinutes(preset.minutes),
+                        visualDensity: VisualDensity.compact,
+                        showCheckmark: false,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  key: const Key('edit-timer-presets'),
+                  tooltip: '编辑预设配置',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => _PresetEditorDialog(controller: controller),
+                  ),
+                  icon: const Icon(Icons.edit_rounded, size: 20),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             _CycleSettings(controller: controller),
@@ -373,6 +395,118 @@ class _CounterTile extends StatelessWidget {
   }
 }
 
+class _PresetEditorDialog extends StatefulWidget {
+  const _PresetEditorDialog({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_PresetEditorDialog> createState() => _PresetEditorDialogState();
+}
+
+class _PresetEditorDialogState extends State<_PresetEditorDialog> {
+  late final List<TextEditingController> _nameControllers;
+  late final List<TextEditingController> _minuteControllers;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameControllers = widget.controller.timerPresets
+        .map((preset) => TextEditingController(text: preset.name))
+        .toList();
+    _minuteControllers = widget.controller.timerPresets
+        .map((preset) => TextEditingController(text: '${preset.minutes}'))
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    for (final controller in [..._nameControllers, ..._minuteControllers]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _save() {
+    final presets = <TimerPreset>[];
+    for (var index = 0; index < _nameControllers.length; index++) {
+      final name = _nameControllers[index].text.trim();
+      final minutes = int.tryParse(_minuteControllers[index].text);
+      if (name.isEmpty ||
+          name.length > 8 ||
+          minutes == null ||
+          minutes < 1 ||
+          minutes > 60) {
+        setState(() => _error = '名称限 1–8 个字，分钟数限 1–60');
+        return;
+      }
+      presets.add(TimerPreset(name: name, minutes: minutes));
+    }
+    widget.controller.setTimerPresets(presets);
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('编辑计时预设'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var index = 0; index < _nameControllers.length; index++) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _nameControllers[index],
+                      maxLength: 8,
+                      decoration: InputDecoration(
+                        labelText: '配置 ${index + 1} 名称',
+                        counterText: '',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 92,
+                    child: TextField(
+                      controller: _minuteControllers[index],
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '分钟',
+                        suffixText: '分',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (index != _nameControllers.length - 1)
+                const SizedBox(height: 8),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('保存配置')),
+      ],
+    );
+  }
+}
+
 enum _TimerEndChoice { save, discard }
 
 Future<void> showTimerEndDialog(
@@ -386,17 +520,28 @@ Future<void> showTimerEndDialog(
       title: const Text('结束这次专注？'),
       content: const Text('你可以保存当前已专注的时间，也可以丢弃本次记录。'),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('继续专注'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, _TimerEndChoice.discard),
-          child: const Text('丢弃记录'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _TimerEndChoice.save),
-          child: const Text('保存记录'),
+        Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('继续专注'),
+              ),
+            ),
+            Expanded(
+              child: TextButton(
+                onPressed: () =>
+                    Navigator.pop(context, _TimerEndChoice.discard),
+                child: const Text('丢弃记录'),
+              ),
+            ),
+            Expanded(
+              child: FilledButton(
+                onPressed: () => Navigator.pop(context, _TimerEndChoice.save),
+                child: const Text('保存记录'),
+              ),
+            ),
+          ],
         ),
       ],
     ),
