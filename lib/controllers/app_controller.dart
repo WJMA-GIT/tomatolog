@@ -17,12 +17,51 @@ enum TimerPhase { idle, running, interval, longInterval }
 enum AppThemePreference { system, light, dark }
 
 class TimerPreset {
-  const TimerPreset({required this.name, required this.minutes});
+  const TimerPreset({
+    required this.name,
+    required this.minutes,
+    this.groupCount = 1,
+    this.cycleCount = 4,
+    this.intervalMinutes = 5,
+    this.longIntervalMinutes = 0,
+    this.recordIntervals = false,
+  });
 
   final String name;
   final int minutes;
+  final int groupCount;
+  final int cycleCount;
+  final int intervalMinutes;
+  final int longIntervalMinutes;
+  final bool recordIntervals;
 
-  Map<String, Object?> toJson() => {'name': name, 'minutes': minutes};
+  TimerPreset copyWith({
+    String? name,
+    int? minutes,
+    int? groupCount,
+    int? cycleCount,
+    int? intervalMinutes,
+    int? longIntervalMinutes,
+    bool? recordIntervals,
+  }) => TimerPreset(
+    name: name ?? this.name,
+    minutes: minutes ?? this.minutes,
+    groupCount: groupCount ?? this.groupCount,
+    cycleCount: cycleCount ?? this.cycleCount,
+    intervalMinutes: intervalMinutes ?? this.intervalMinutes,
+    longIntervalMinutes: longIntervalMinutes ?? this.longIntervalMinutes,
+    recordIntervals: recordIntervals ?? this.recordIntervals,
+  );
+
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'minutes': minutes,
+    'groupCount': groupCount,
+    'cycleCount': cycleCount,
+    'intervalMinutes': intervalMinutes,
+    'longIntervalMinutes': longIntervalMinutes,
+    'recordIntervals': recordIntervals,
+  };
 }
 
 class AppController extends ChangeNotifier {
@@ -70,6 +109,7 @@ class AppController extends ChangeNotifier {
   int _intervalMinutes = 5;
   int _longIntervalMinutes = 0;
   bool _recordIntervals = false;
+  int? _activeTimerPresetIndex;
   int _currentCycle = 1;
   int _currentGroup = 1;
   DateTime? _sessionStartedAt;
@@ -97,6 +137,8 @@ class AppController extends ChangeNotifier {
   int get longIntervalMinutes => _longIntervalMinutes;
 
   bool get recordIntervals => _recordIntervals;
+
+  int? get activeTimerPresetIndex => _activeTimerPresetIndex;
 
   int get currentCycle => _currentCycle;
 
@@ -149,6 +191,7 @@ class AppController extends ChangeNotifier {
   Future<void> load() async {
     _ticker?.cancel();
     _midnightRefresh?.cancel();
+    _activeTimerPresetIndex = null;
     _categories.clear();
     _logs.clear();
     _plans.clear();
@@ -194,9 +237,7 @@ class AppController extends ChangeNotifier {
       _timerPresets
         ..clear()
         ..addAll(_parseTimerPresets(data['timerPresets']));
-      _plannedMinutes = _parseTimerPhase(timerData?['phase']) == TimerPhase.idle
-          ? 25
-          : _validPlannedMinutes(data['plannedMinutes']);
+      _plannedMinutes = _validPlannedMinutes(data['plannedMinutes']);
       _selectedCategoryId = data['selectedCategoryId'] as String?;
       _themePreference = _parseThemePreference(data['themePreference']);
       _accentColorValue =
@@ -294,6 +335,41 @@ class AppController extends ChangeNotifier {
     }
     _plannedMinutes = minutes;
     _remainingSeconds = minutes * 60;
+    _syncActiveTimerPreset();
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  void selectTimerPreset(int index) {
+    if (phase != TimerPhase.idle || index < 0 || index >= timerPresets.length) {
+      return;
+    }
+    final preset = timerPresets[index];
+    _activeTimerPresetIndex = index;
+    _plannedMinutes = preset.minutes;
+    _groupCount = preset.groupCount;
+    _cycleCount = preset.cycleCount;
+    _intervalMinutes = preset.cycleCount == 1 ? 0 : preset.intervalMinutes;
+    _longIntervalMinutes = preset.groupCount == 1
+        ? 0
+        : preset.longIntervalMinutes;
+    _recordIntervals = preset.recordIntervals;
+    _remainingSeconds = plannedMinutes * 60;
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  void renameTimerPreset(int index, String value) {
+    final name = value.trim();
+    if (phase != TimerPhase.idle ||
+        index < 0 ||
+        index >= timerPresets.length ||
+        name.isEmpty ||
+        name.length > 8 ||
+        timerPresets[index].name == name) {
+      return;
+    }
+    _timerPresets[index] = timerPresets[index].copyWith(name: name);
     notifyListeners();
     _schedulePersist();
   }
@@ -306,14 +382,27 @@ class AppController extends ChangeNotifier {
       if (name.isEmpty ||
           name.length > 8 ||
           preset.minutes <= 0 ||
-          preset.minutes > timerDialMinutes) {
+          preset.minutes > timerDialMinutes ||
+          preset.groupCount <= 0 ||
+          preset.groupCount > maxGroupCount ||
+          preset.cycleCount <= 0 ||
+          preset.cycleCount > maxCycleCount ||
+          (preset.cycleCount == 1 && preset.intervalMinutes != 0) ||
+          (preset.cycleCount > 1 &&
+              (preset.intervalMinutes <= 0 ||
+                  preset.intervalMinutes > maxIntervalMinutes)) ||
+          (preset.groupCount == 1 && preset.longIntervalMinutes != 0) ||
+          (preset.groupCount > 1 &&
+              (preset.longIntervalMinutes <= 0 ||
+                  preset.longIntervalMinutes > maxIntervalMinutes))) {
         return;
       }
-      normalized.add(TimerPreset(name: name, minutes: preset.minutes));
+      normalized.add(preset.copyWith(name: name));
     }
     _timerPresets
       ..clear()
       ..addAll(normalized);
+    _activeTimerPresetIndex = null;
     notifyListeners();
     _schedulePersist();
   }
@@ -331,6 +420,7 @@ class AppController extends ChangeNotifier {
     } else if (intervalMinutes == 0) {
       _intervalMinutes = 5;
     }
+    _syncActiveTimerPreset();
     notifyListeners();
     _schedulePersist();
   }
@@ -348,6 +438,7 @@ class AppController extends ChangeNotifier {
     } else if (longIntervalMinutes == 0) {
       _longIntervalMinutes = 15;
     }
+    _syncActiveTimerPreset();
     notifyListeners();
     _schedulePersist();
   }
@@ -361,6 +452,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     _intervalMinutes = minutes;
+    _syncActiveTimerPreset();
     notifyListeners();
     _schedulePersist();
   }
@@ -374,6 +466,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     _longIntervalMinutes = minutes;
+    _syncActiveTimerPreset();
     notifyListeners();
     _schedulePersist();
   }
@@ -381,8 +474,22 @@ class AppController extends ChangeNotifier {
   void setRecordIntervals(bool value) {
     if (phase != TimerPhase.idle || recordIntervals == value) return;
     _recordIntervals = value;
+    _syncActiveTimerPreset();
     notifyListeners();
     _schedulePersist();
+  }
+
+  void _syncActiveTimerPreset() {
+    final index = _activeTimerPresetIndex;
+    if (index == null || index < 0 || index >= _timerPresets.length) return;
+    _timerPresets[index] = _timerPresets[index].copyWith(
+      minutes: plannedMinutes,
+      groupCount: groupCount,
+      cycleCount: cycleCount,
+      intervalMinutes: intervalMinutes,
+      longIntervalMinutes: longIntervalMinutes,
+      recordIntervals: recordIntervals,
+    );
   }
 
   void startTimer() {
@@ -1158,6 +1265,7 @@ class AppController extends ChangeNotifier {
     _intervalMinutes = 5;
     _longIntervalMinutes = 0;
     _recordIntervals = false;
+    _activeTimerPresetIndex = null;
     _currentCycle = 1;
     _currentGroup = 1;
     _selectedCategoryId = _categories.first.id;
@@ -1188,7 +1296,23 @@ class AppController extends ChangeNotifier {
           minutes > timerDialMinutes) {
         return _defaultTimerPresets;
       }
-      presets.add(TimerPreset(name: name.trim(), minutes: minutes));
+      final cycleCount = _validCycleCount(item['cycleCount']);
+      final groupCount = _validGroupCount(item['groupCount']);
+      presets.add(
+        TimerPreset(
+          name: name.trim(),
+          minutes: minutes,
+          groupCount: groupCount,
+          cycleCount: cycleCount,
+          intervalMinutes: cycleCount == 1
+              ? 0
+              : _validIntervalMinutes(item['intervalMinutes']),
+          longIntervalMinutes: groupCount == 1
+              ? 0
+              : _validLongIntervalMinutes(item['longIntervalMinutes']),
+          recordIntervals: item['recordIntervals'] == true,
+        ),
+      );
     }
     return presets;
   }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../controllers/app_controller.dart';
@@ -35,34 +36,47 @@ class _LandscapeTimerModeState extends State<LandscapeTimerMode> {
     final shouldBeActive =
         MediaQuery.orientationOf(context) == Orientation.landscape &&
         widget.controller.phase != TimerPhase.idle;
+    if (shouldBeActive) _disableDebugBaselineOverlay();
     _scheduleModeSync(shouldBeActive);
     if (!shouldBeActive) return widget.child;
     return ColoredBox(
       key: const Key('landscape-timer-mode'),
       color: Colors.black,
-      child: Center(
-        child: _blackout
-            ? const SizedBox.shrink(key: Key('landscape-timer-blackout'))
-            : Padding(
-                padding: const EdgeInsets.all(12),
+      child: _blackout
+          ? const Center(
+              child: SizedBox.shrink(key: Key('landscape-timer-blackout')),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(12),
+              child: SizedBox.expand(
                 child: FittedBox(
                   fit: BoxFit.contain,
+                  alignment: Alignment.center,
                   child: Text(
                     formatClock(widget.controller.remainingSeconds),
                     key: const Key('landscape-timer-clock'),
+                    textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 320,
                       fontWeight: FontWeight.w600,
                       height: 1,
                       letterSpacing: 2,
+                      decoration: TextDecoration.none,
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
                 ),
               ),
-      ),
+            ),
     );
+  }
+
+  void _disableDebugBaselineOverlay() {
+    assert(() {
+      debugPaintBaselinesEnabled = false;
+      return true;
+    }());
   }
 
   void _scheduleModeSync(bool active) {

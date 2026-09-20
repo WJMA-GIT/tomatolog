@@ -93,6 +93,54 @@ void main() {
     restored.dispose();
   });
 
+  test('applies and automatically updates a complete timer preset', () async {
+    final storage = MemoryAppStorage();
+    final controller = AppController(storage);
+    await controller.load();
+    controller.setTimerPresets(const [
+      TimerPreset(
+        name: '冲刺',
+        minutes: 10,
+        groupCount: 2,
+        cycleCount: 3,
+        intervalMinutes: 4,
+        longIntervalMinutes: 12,
+        recordIntervals: true,
+      ),
+      TimerPreset(name: '番茄', minutes: 25),
+      TimerPreset(name: '深度', minutes: 50),
+    ]);
+
+    controller.selectTimerPreset(0);
+    expect(controller.activeTimerPresetIndex, 0);
+    expect(controller.plannedMinutes, 10);
+    expect(controller.groupCount, 2);
+    expect(controller.cycleCount, 3);
+    expect(controller.intervalMinutes, 4);
+    expect(controller.longIntervalMinutes, 12);
+    expect(controller.recordIntervals, isTrue);
+
+    controller
+      ..setPlannedMinutes(11)
+      ..setCycleCount(2)
+      ..setIntervalMinutes(6)
+      ..setRecordIntervals(false);
+    expect(controller.timerPresets.first.minutes, 11);
+    expect(controller.timerPresets.first.cycleCount, 2);
+    expect(controller.timerPresets.first.intervalMinutes, 6);
+    expect(controller.timerPresets.first.recordIntervals, isFalse);
+    await Future<void>.delayed(Duration.zero);
+
+    final restored = AppController(storage);
+    await restored.load();
+    expect(restored.activeTimerPresetIndex, isNull);
+    expect(restored.plannedMinutes, 11);
+    expect(restored.timerPresets.first.minutes, 11);
+    expect(restored.timerPresets.first.intervalMinutes, 6);
+    controller.dispose();
+    restored.dispose();
+  });
+
   test(
     'runs configured focus cycles and optionally records intervals',
     () async {
@@ -373,7 +421,7 @@ void main() {
     restored.dispose();
   });
 
-  test('idle timer opens at the 25 minute default', () async {
+  test('idle timer restores the last global configuration', () async {
     final storage = MemoryAppStorage();
     final controller = AppController(storage);
     await controller.load();
@@ -383,7 +431,8 @@ void main() {
 
     final restored = AppController(storage);
     await restored.load();
-    expect(restored.plannedMinutes, 25);
+    expect(restored.plannedMinutes, 45);
+    expect(restored.activeTimerPresetIndex, isNull);
     restored.dispose();
   });
 

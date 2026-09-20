@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomatolog/controllers/app_controller.dart';
@@ -30,6 +31,8 @@ void main() {
     final controller = AppController(MemoryAppStorage(), AppPlatformService());
     await controller.load();
     controller.startTimer();
+    debugPaintBaselinesEnabled = true;
+    addTearDown(() => debugPaintBaselinesEnabled = false);
     final size = ValueNotifier(const Size(800, 400));
     addTearDown(size.dispose);
 
@@ -55,6 +58,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('landscape-timer-clock')), findsOneWidget);
+    expect(debugPaintBaselinesEnabled, isFalse);
     expect(
       find.ancestor(of: find.byType(Text), matching: find.byType(FittedBox)),
       findsOneWidget,
@@ -66,6 +70,14 @@ void main() {
           ?.fontSize,
       320,
     );
+    final modeCenter = tester.getCenter(
+      find.byKey(const Key('landscape-timer-mode')),
+    );
+    final clockCenter = tester.getCenter(
+      find.byKey(const Key('landscape-timer-clock')),
+    );
+    expect(clockCenter.dx, closeTo(modeCenter.dx, 0.01));
+    expect(clockCenter.dy, closeTo(modeCenter.dy, 0.01));
     expect(keepScreenOn, [true]);
 
     await tester.pump(const Duration(milliseconds: 10));

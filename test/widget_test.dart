@@ -402,7 +402,9 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('edits and cancels reusable timer presets', (tester) async {
+  testWidgets('selects a full timer preset and renames it by long press', (
+    tester,
+  ) async {
     final controller = AppController(MemoryAppStorage());
     await controller.load();
     await tester.pumpWidget(
@@ -416,22 +418,19 @@ void main() {
     );
 
     expect(find.text('准备开始'), findsNothing);
-    await tester.tap(find.byKey(const Key('edit-timer-presets')));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).first, '冲刺');
-    await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
-    expect(controller.timerPresets.first.name, '短时');
+    expect(controller.activeTimerPresetIndex, isNull);
+    await tester.tap(find.text('短时 15分'));
+    await tester.pump();
+    expect(controller.activeTimerPresetIndex, 0);
+    expect(controller.plannedMinutes, 15);
 
-    await tester.tap(find.byKey(const Key('edit-timer-presets')));
+    await tester.longPress(find.text('短时 15分'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).at(0), '冲刺');
-    await tester.enterText(find.byType(TextField).at(1), '10');
-    await tester.tap(find.text('保存配置'));
+    await tester.enterText(find.byType(TextField), '冲刺');
+    await tester.tap(find.text('确定'));
     await tester.pumpAndSettle();
     expect(controller.timerPresets.first.name, '冲刺');
-    expect(controller.timerPresets.first.minutes, 10);
-    expect(find.text('冲刺 10分'), findsOneWidget);
+    expect(find.text('冲刺 15分'), findsOneWidget);
     controller.dispose();
   });
 
@@ -564,12 +563,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('结束这次专注？'), findsOneWidget);
     final actionCenters = [
-      '继续专注',
-      '丢弃记录',
-      '保存记录',
+      '继续',
+      '丢弃',
+      '保存',
     ].map((label) => tester.getCenter(find.text(label))).toList();
     expect(actionCenters.map((center) => center.dy).toSet(), hasLength(1));
-    await tester.tap(find.text('丢弃记录'));
+    for (final label in const ['继续', '丢弃', '保存']) {
+      final text = tester.widget<Text>(find.text(label));
+      expect(text.maxLines, 1);
+      expect(text.softWrap, isFalse);
+    }
+    await tester.tap(find.text('丢弃'));
     await tester.pumpAndSettle();
     expect(controller.phase, TimerPhase.idle);
     controller.dispose();
