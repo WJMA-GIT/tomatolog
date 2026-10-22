@@ -206,6 +206,21 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
             ),
           ],
+          if (defaultTargetPlatform == TargetPlatform.android) ...[
+            const SizedBox(height: 28),
+            Text('桌面小部件', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 10),
+            Card(
+              color: theme.colorScheme.surfaceContainerLowest,
+              child: ListTile(
+                leading: const Icon(Icons.widgets_outlined),
+                title: const Text('添加桌面小部件'),
+                subtitle: const Text('查看今日计划，点击计划即可配置计时'),
+                trailing: const Icon(Icons.add_rounded),
+                onTap: widget.controller.requestPinTodayPlanWidget,
+              ),
+            ),
+          ],
           if (widget.controller.webDav case final webDav?) ...[
             const SizedBox(height: 28),
             AnimatedBuilder(

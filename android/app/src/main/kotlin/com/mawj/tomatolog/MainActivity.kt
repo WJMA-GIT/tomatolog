@@ -13,6 +13,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.widget.Toast
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -29,15 +30,36 @@ class MainActivity : FlutterActivity() {
     private var backupExportResult: MethodChannel.Result? = null
     private var backupExportBytes: ByteArray? = null
     private var platformChannel: MethodChannel? = null
+    private var widgetActionsReady = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        widgetActionsReady = false
         platformChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "tomatolog/platform",
         )
         platformChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
+                "showToast" -> {
+                    val message = call.arguments as? String
+                    if (!message.isNullOrBlank()) Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+                    result.success(null)
+                }
+                "updateTodayPlanWidget" -> {
+                    val data = call.arguments as? String
+                    runCatching {
+                        requireNotNull(data) { "计划数据无效" }
+                        TodayPlanWidgetProvider.saveData(this, data)
+                    }.onSuccess { result.success(null) }
+                        .onFailure { result.error("invalid_widget_data", it.message, null) }
+                }
+                "requestPinTodayPlanWidget" ->
+                    result.success(TodayPlanWidgetProvider.requestPin(this))
+                "consumeWidgetPlanAction" -> {
+                    widgetActionsReady = true
+                    result.success(consumeWidgetPlanAction())
+                }
                 "requestNotificationPermission" -> {
                     requestNotificationPermission(result)
                 }
@@ -159,6 +181,11 @@ class MainActivity : FlutterActivity() {
         if (consumeNotificationAction() == "stopTimer") {
             platformChannel?.invokeMethod("stopTimer", null)
         }
+        if (widgetActionsReady) {
+            consumeWidgetPlanAction()?.let { planId ->
+                platformChannel?.invokeMethod("openPlanTimer", planId)
+            }
+        }
     }
 
     private fun setLandscapeDisplayActive(active: Boolean) {
@@ -201,6 +228,14 @@ class MainActivity : FlutterActivity() {
         if (intent?.action != stopTimerAction) return null
         intent.action = null
         return "stopTimer"
+    }
+
+    private fun consumeWidgetPlanAction(): String? {
+        if (intent?.action != TodayPlanWidgetProvider.OPEN_PLAN_ACTION) return null
+        val planId = intent.getStringExtra(TodayPlanWidgetProvider.PLAN_ID_EXTRA)
+        intent.action = null
+        intent.removeExtra(TodayPlanWidgetProvider.PLAN_ID_EXTRA)
+        return planId?.takeIf { it.isNotBlank() }
     }
 
     private fun requestNotificationPermission(result: MethodChannel.Result? = null) {

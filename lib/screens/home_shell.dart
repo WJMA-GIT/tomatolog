@@ -28,10 +28,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   bool _requestingNotificationPermission = false;
   bool _notificationGranted = false;
   bool _testNotificationOnResume = false;
+  late int _widgetTimerNavigationRevision;
 
   @override
   void initState() {
     super.initState();
+    _widgetTimerNavigationRevision =
+        widget.controller.widgetTimerNavigationRevision;
+    widget.controller.addListener(_handleWidgetTimerNavigation);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshNotificationStatus(requestOnFirstOpen: true);
@@ -40,8 +44,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    widget.controller.removeListener(_handleWidgetTimerNavigation);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _handleWidgetTimerNavigation() {
+    final revision = widget.controller.widgetTimerNavigationRevision;
+    if (revision == _widgetTimerNavigationRevision) return;
+    _widgetTimerNavigationRevision = revision;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    setState(() => _index = 2);
   }
 
   @override

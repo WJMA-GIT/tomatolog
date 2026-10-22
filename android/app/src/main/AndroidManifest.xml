@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
@@ -50,6 +51,23 @@
             android:exported="false" />
         <receiver
             android:name=".TimerAlarmReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".TodayPlanWidgetProvider"
+            android:label="@string/today_plan_widget_name"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/today_plan_widget_info" />
+        </receiver>
+        <service android:name=".TodayPlanWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="false" />
         <meta-data
             android:name="flutterEmbedding"

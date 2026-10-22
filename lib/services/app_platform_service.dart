@@ -11,14 +11,32 @@ class AppPlatformService {
   static const _channel = MethodChannel('tomatolog/platform');
   final _iconCache = <String, Uint8List>{};
 
-  Future<void> listenForNotificationActions(VoidCallback onStop) async {
+  Future<void> listenForNotificationActions(
+    VoidCallback onStop, {
+    ValueChanged<String>? onOpenPlan,
+  }) async {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'stopTimer') onStop();
+      if (call.method == 'openPlanTimer' && call.arguments is String) {
+        onOpenPlan?.call(call.arguments as String);
+      }
     });
     if (await _invoke<String>('consumeNotificationAction') == 'stopTimer') {
       onStop();
     }
+    final planId = await _invoke<String>('consumeWidgetPlanAction');
+    if (planId != null && planId.isNotEmpty) onOpenPlan?.call(planId);
   }
+
+  Future<void> updateTodayPlanWidget(String json) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    await _invoke<void>('updateTodayPlanWidget', json);
+  }
+
+  Future<bool> requestPinTodayPlanWidget() async =>
+      await _invoke<bool>('requestPinTodayPlanWidget') ?? false;
+
+  Future<void> showToast(String message) => _invoke<void>('showToast', message);
 
   Future<void> requestNotificationPermission() =>
       _invoke<void>('requestNotificationPermission');

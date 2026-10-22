@@ -26,7 +26,7 @@ Future<void> main() async {
       final context = navigatorKey.currentContext;
       if (context != null) await showTimerEndDialog(context, controller);
     });
-  });
+  }, onOpenPlan: controller.openPlanTimer);
   runApp(TomatoLogApp(controller: controller, navigatorKey: navigatorKey));
   unawaited(webDav.runAutomaticTasks());
 }

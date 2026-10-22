@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="16dp"
+    android:background="@drawable/today_plan_widget_background">
+    <LinearLayout android:id="@+id/widget_header"
+        android:layout_width="match_parent" android:layout_height="40dp"
+        android:orientation="horizontal" android:gravity="center_vertical">
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="今日计划" android:textSize="18sp"
+            android:textStyle="bold" android:textColor="#232321" />
+        <TextView android:id="@+id/widget_date" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:textSize="12sp" android:textColor="#75756E" />
+    </LinearLayout>
+    <ListView android:id="@+id/widget_plans" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1" android:divider="@android:color/transparent"
+        android:dividerHeight="2dp" android:scrollbars="none" />
+    <TextView android:id="@+id/widget_empty" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1" android:gravity="center"
+        android:text="今天暂无计划" android:textColor="#75756E" android:textSize="14sp" />
+</LinearLayout>

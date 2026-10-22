@@ -119,6 +119,9 @@ class AppController extends ChangeNotifier {
   String? _backgroundImagePath;
   bool _floatingTimerEnabled = false;
   bool _appInForeground = true;
+  int _widgetTimerNavigationRevision = 0;
+
+  int get widgetTimerNavigationRevision => _widgetTimerNavigationRevision;
 
   TimerPhase get phase => _phase;
 
@@ -266,6 +269,7 @@ class AppController extends ChangeNotifier {
       await _persist();
     }
     if (_syncPlanCompletions(DateTime.now())) await _persist();
+    unawaited(_updateTodayPlanWidget());
     _scheduleMidnightRefresh();
     notifyListeners();
   }
@@ -339,6 +343,46 @@ class AppController extends ChangeNotifier {
     notifyListeners();
     _schedulePersist();
   }
+
+  bool preparePlanTimer(String planId) {
+    if (phase != TimerPhase.idle) return false;
+    final index = _plans.indexWhere((plan) => plan.id == planId);
+    if (index == -1) return false;
+    final plan = _plans[index];
+    final category = categoryById(plan.categoryId);
+    if (!plan.occursOn(DateTime.now()) ||
+        category == null ||
+        category.isArchived) {
+      return false;
+    }
+    _selectedCategoryId = plan.categoryId;
+    _plannedMinutes = plan.plannedMinutes;
+    _remainingSeconds = plannedMinutes * 60;
+    _activeTimerPresetIndex = null;
+    _cycleCount = 1;
+    _groupCount = 1;
+    _intervalMinutes = 0;
+    _longIntervalMinutes = 0;
+    _recordIntervals = false;
+    notifyListeners();
+    _schedulePersist();
+    return true;
+  }
+
+  void openPlanTimer(String planId) {
+    if (phase != TimerPhase.idle) {
+      unawaited(_platform?.showToast('正在计时，先完成或结束当前计时'));
+    } else if (!preparePlanTimer(planId)) {
+      unawaited(_platform?.showToast('该计划已失效，请刷新桌面小部件'));
+      unawaited(_updateTodayPlanWidget());
+      return;
+    }
+    _widgetTimerNavigationRevision++;
+    notifyListeners();
+  }
+
+  Future<bool> requestPinTodayPlanWidget() async =>
+      await _platform?.requestPinTodayPlanWidget() ?? false;
 
   void selectTimerPreset(int index) {
     if (phase != TimerPhase.idle || index < 0 || index >= timerPresets.length) {
@@ -1151,7 +1195,19 @@ class AppController extends ChangeNotifier {
     },
   };
 
-  Future<void> _persist() => _storage.write(_dataSnapshot());
+  Future<void> _persist() async {
+    await _storage.write(_dataSnapshot());
+    unawaited(_updateTodayPlanWidget());
+  }
+
+  Future<void> _updateTodayPlanWidget() async {
+    await _platform?.updateTodayPlanWidget(
+      jsonEncode({
+        'plans': _plans.map((plan) => plan.toJson()).toList(),
+        'categories': _categories.map((category) => category.toJson()).toList(),
+      }),
+    );
+  }
 
   Future<Map<String, Object?>> exportPortableData() async {
     await _pendingPersist;
@@ -1278,7 +1334,7 @@ class AppController extends ChangeNotifier {
   }
 
   static int _validPlannedMinutes(Object? value) {
-    return value is int && value > 0 && value <= timerDialMinutes ? value : 25;
+    return value is int && value > 0 && value <= maxMinutes ? value : 25;
   }
 
   static List<TimerPreset> _parseTimerPresets(Object? value) {
