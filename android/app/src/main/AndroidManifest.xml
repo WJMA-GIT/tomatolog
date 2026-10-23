@@ -38,6 +38,12 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity
+            android:name=".TodayPlanWidgetSettingsActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/WidgetSettingsTheme" />
         <service
             android:name=".TimerNotificationService"
             android:exported="false"
@@ -61,6 +67,7 @@
                 <action android:name="android.intent.action.DATE_CHANGED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider"

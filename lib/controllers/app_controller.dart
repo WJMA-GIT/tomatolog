@@ -1205,6 +1205,8 @@ class AppController extends ChangeNotifier {
       jsonEncode({
         'plans': _plans.map((plan) => plan.toJson()).toList(),
         'categories': _categories.map((category) => category.toJson()).toList(),
+        'themePreference': themePreference.name,
+        'accentColorValue': accentColorValue,
       }),
     );
   }

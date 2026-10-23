@@ -105,7 +105,17 @@ void main() {
         AppPlatformService(),
       );
       await controller.load();
-      expect(payloads.single.keys.toSet(), {'plans', 'categories'});
+      expect(payloads.single.keys.toSet(), {
+        'plans',
+        'categories',
+        'themePreference',
+        'accentColorValue',
+      });
+      controller.setThemePreference(AppThemePreference.dark);
+      controller.setAccentColor(0xFF4169C1);
+      await Future<void>.delayed(Duration.zero);
+      expect(payloads.last['themePreference'], 'dark');
+      expect(payloads.last['accentColorValue'], 0xFF4169C1);
       final now = DateTime.now();
       controller.addPlan(
         startDate: now,
