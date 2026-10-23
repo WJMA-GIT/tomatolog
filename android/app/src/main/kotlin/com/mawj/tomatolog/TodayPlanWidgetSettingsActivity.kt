@@ -5,10 +5,12 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -35,16 +37,13 @@ class TodayPlanWidgetSettingsActivity : Activity() {
         var opacity = appearance.opacity
         var fontSize = appearance.fontSizeSp
         val accent = ColorStateList.valueOf(appearance.accentColor)
-        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        window.setDimAmount(0.2f)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = appearance.backgroundColor
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = if (appearance.backgroundColor == Color.BLACK) 0 else
-            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.setGravity(Gravity.BOTTOM)
+        setFinishOnTouchOutside(true)
 
         val root = FrameLayout(this).apply {
-            fitsSystemWindows = true
+            setPadding(dp(12), dp(12), dp(12), dp(12))
             setOnClickListener { finish() }
         }
         val panel = LinearLayout(this).apply {
@@ -57,14 +56,16 @@ class TodayPlanWidgetSettingsActivity : Activity() {
             isClickable = true
         }
         val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(panel)
+            isFillViewport = false
+            addView(panel, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
         }
         root.addView(scroll, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.BOTTOM,
-        ).apply { setMargins(dp(12), dp(12), dp(12), dp(12)) })
+        ))
 
         fun label(value: String, size: Float = 16f) = TextView(this).apply {
             text = value
@@ -119,7 +120,14 @@ class TodayPlanWidgetSettingsActivity : Activity() {
             }, RadioGroup.LayoutParams(0, dp(48), 1f))
         }
         panel.addView(fontOptions)
-        setContentView(root)
+        setContentView(root, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        window.setLayout(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+        )
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
