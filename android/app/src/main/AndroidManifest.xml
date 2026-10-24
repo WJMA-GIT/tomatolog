@@ -55,6 +55,9 @@
         <service
             android:name=".FloatingTimerService"
             android:exported="false" />
+        <service
+            android:name=".TodayPlanWidgetSettingsService"
+            android:exported="false" />
         <receiver
             android:name=".TimerAlarmReceiver"
             android:exported="false" />
